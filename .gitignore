@@ -1,0 +1,27 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+nenv/
+
+# Project-specific uploads and outputs
+uploads/
+extracted_frames/
+outputs/
+*.glb
+*.obj
+*.ply
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+Thumbs.db
+.DS_Store
