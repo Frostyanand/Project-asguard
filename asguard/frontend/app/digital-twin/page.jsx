@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Sofa,
@@ -21,26 +21,43 @@ import {
   Activity,
   FlaskConical,
   CheckCircle2,
+  Home,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  Move3D,
 } from 'lucide-react'
 import Header from '../../components/Header'
 import AppLayout from '../../components/AppLayout'
 
+import dynamic from "next/dynamic";
+
+const Scene = dynamic(
+  () => import("./components/Scene"),
+  { ssr: false }
+);
+
 // ── Page-local Sub-components ─────────────────────────────────────────────────
 
-function RoomCard({ icon: Icon, label, active, onClick }) {
+function RoomCard({ letter, label, active, onClick, icon: Icon }) {
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-4 px-5 py-4 rounded-[18px] transition-all duration-300 shadow-sm outline-none
+      className={`w-full flex items-center gap-4 px-5 py-4 rounded-[18px] transition-all duration-300 shadow-sm border outline-none
         ${active
-          ? 'bg-[#1428A0] text-white ring-4 ring-[#1428A0]/15 premium-shadow scale-[1.02]'
-          : 'bg-white text-gray-700 hover:bg-gray-50 hover:ring-2 hover:ring-gray-200 ring-1 ring-gray-100/80 active:scale-[0.98]'
+          ? 'bg-[#1428A0] text-white border-[#1428A0] ring-4 ring-[#1428A0]/15 premium-shadow scale-[1.02]'
+          : 'bg-white text-gray-700 border-gray-105 hover:bg-gray-50 hover:border-gray-200 hover:ring-2 hover:ring-gray-100 active:scale-[0.98]'
         }`}
     >
-      <div className={`w-11 h-11 rounded-xl flex items-center justify-center transition-colors shrink-0 ${active ? 'bg-white/20' : 'bg-[#F7F9FC] text-[#1428A0]'}`}>
-        <Icon size={22} strokeWidth={2.5} />
+      <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm shrink-0 transition-colors
+        ${active ? 'bg-white/20 text-white' : 'bg-[#F7F9FC] text-[#1428A0]'}`}>
+        {letter}
       </div>
-      <span className="text-[15px] font-bold tracking-tight">{label}</span>
+      <div className="flex-1 flex items-center justify-between min-w-0 font-bold">
+        <span className="text-[15px] tracking-tight text-left truncate">{label}</span>
+        {Icon && <Icon size={18} className={`${active ? 'text-white/60' : 'text-gray-400'} shrink-0`} />}
+      </div>
     </button>
   )
 }
@@ -84,164 +101,265 @@ function DeviceCard({ icon: Icon, name, status, power, consumption }) {
 
 // ── DigitalTwin Page ──────────────────────────────────────────────────────────
 export default function DigitalTwin() {
-  const [activeRoom, setActiveRoom] = useState('Living Room')
+  const [activeRoom, setActiveRoom] = useState('all')
+  const [ceilingVisible, setCeilingVisible] = useState(false)
+  const [focusMode, setFocusMode] = useState(true)
+  const [roomCenters, setRoomCenters] = useState({})
+  const [leftPanelOpen, setLeftPanelOpen] = useState(false)
+  const [rightPanelOpen, setRightPanelOpen] = useState(false)
+  const [viewMode, setViewMode] = useState('isometric')
+
   const router = useRouter()
 
-  const readyBadge = (
-    <span className="bg-green-50 border border-green-200 text-green-700 px-3 py-1 rounded-full text-[11px] font-extrabold tracking-widest flex items-center gap-1.5 shadow-sm mt-1">
-      <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-      READY
-    </span>
-  )
+  // Auto-traverse: when a specific room is selected, go interior. When 'all', go aerial.
+  useEffect(() => {
+    if (activeRoom === 'all') {
+      setViewMode('isometric');
+    } else {
+      setViewMode('interior');
+    }
+  }, [activeRoom]);
+
+  const roomNamesMap = {
+    all: 'Entire Apartment',
+    A: 'Bedroom 1 (Master)',
+    B: 'Bedroom 2 (Guest)',
+    C: 'Kitchen Space',
+    D: 'Bathroom & Corridor',
+    E: 'Living Room Space',
+  }
+
+  const roomList = [
+    { id: 'all', label: 'Entire Apartment', letter: 'ALL', icon: Home },
+    { id: 'A', label: 'Bedroom 1', letter: 'A', icon: Bed },
+    { id: 'B', label: 'Bedroom 2', letter: 'B', icon: Bed },
+    { id: 'C', label: 'Kitchen', letter: 'C', icon: Utensils },
+    { id: 'D', label: 'Bathroom', letter: 'D', icon: Bath },
+    { id: 'E', label: 'Living Room', letter: 'E', icon: Sofa },
+  ]
+
+  const devicesData = {
+    all: [
+      { icon: Wind, name: "Samsung WindFree AC", status: "Online", power: "ON", consumption: "1.2 kWh" },
+      { icon: Tv, name: "Samsung Frame TV", status: "Online", power: "ON", consumption: "0.8 kWh" },
+      { icon: Lightbulb, name: "Smart Lighting", status: "Online", power: "ON", consumption: "0.3 kWh" },
+      { icon: Blinds, name: "Smart Curtains", status: "Online", power: "OFF" },
+      { icon: Fan, name: "Ceiling Fan", status: "Offline", power: "OFF" },
+    ],
+    A: [
+      { icon: Wind, name: "WindFree AC (Bedroom 1)", status: "Online", power: "ON", consumption: "0.6 kWh" },
+      { icon: Lightbulb, name: "Bedside Reading Lamps", status: "Online", power: "ON", consumption: "0.1 kWh" },
+      { icon: Blinds, name: "Blackout Blinds", status: "Online", power: "OFF" },
+    ],
+    B: [
+      { icon: Wind, name: "AC (Bedroom 2)", status: "Offline", power: "OFF" },
+      { icon: Lightbulb, name: "Bedroom 2 Spotlight", status: "Online", power: "ON", consumption: "0.15 kWh" },
+    ],
+    C: [
+      { icon: Lightbulb, name: "Kitchen Task Lighting", status: "Online", power: "ON", consumption: "0.2 kWh" },
+      { icon: Blinds, name: "Kitchen Blind", status: "Online", power: "OFF" },
+    ],
+    D: [
+      { icon: Lightbulb, name: "Vanity Mirror Glow", status: "Online", power: "ON", consumption: "0.05 kWh" },
+      { icon: Fan, name: "Exhaust Ventilator", status: "Online", power: "ON", consumption: "0.08 kWh" },
+    ],
+    E: [
+      { icon: Wind, name: "Samsung WindFree AC", status: "Online", power: "ON", consumption: "1.2 kWh" },
+      { icon: Tv, name: "Samsung Frame TV", status: "Online", power: "ON", consumption: "0.8 kWh" },
+      { icon: Lightbulb, name: "Ambient Backlighting", status: "Online", power: "ON", consumption: "0.30 kWh" },
+      { icon: Blinds, name: "Balcony Curtains", status: "Online", power: "OFF" },
+    ]
+  }
+
+  const activeDevices = devicesData[activeRoom] || devicesData.all
 
   return (
     <AppLayout>
-      <Header title="Interactive Digital Twin" titleExtra={readyBadge} subtitle="Interact with your reconstructed smart home." />
+      {/* Full-screen immersive container — no header to maximize viewport */}
+      <div className="flex-1 relative w-full h-full overflow-hidden select-none">
 
-      <div className="flex-1 flex gap-8 px-10 pb-10 overflow-hidden">
-
-        {/* LEFT: Room Selector */}
-        <div className="w-[260px] flex flex-col shrink-0 h-full z-20">
-          <h3 className="text-xs font-bold tracking-widest uppercase text-gray-400 mb-6 ml-1">Select Room</h3>
-          <div className="flex flex-col gap-4 overflow-y-auto pb-4 pr-3 scroll-smooth">
-            <RoomCard icon={Sofa}    label="Living Room" active={activeRoom === 'Living Room'} onClick={() => setActiveRoom('Living Room')} />
-            <RoomCard icon={Bed}     label="Bedroom"     active={activeRoom === 'Bedroom'}     onClick={() => setActiveRoom('Bedroom')} />
-            <RoomCard icon={Utensils} label="Kitchen"    active={activeRoom === 'Kitchen'}     onClick={() => setActiveRoom('Kitchen')} />
-            <RoomCard icon={Bath}    label="Bathroom"    active={activeRoom === 'Bathroom'}    onClick={() => setActiveRoom('Bathroom')} />
-          </div>
+        {/* 3D Viewer fills entire viewport */}
+        <div className="absolute inset-0 bg-gradient-to-b from-[#0a0e1a] to-[#111827]">
+          <Scene
+            activeRoom={activeRoom === 'all' ? null : activeRoom}
+            setActiveRoom={setActiveRoom}
+            ceilingVisible={ceilingVisible}
+            focusMode={focusMode}
+            roomCenters={roomCenters}
+            setRoomCenters={setRoomCenters}
+            viewMode={viewMode}
+          />
         </div>
 
-        {/* CENTER: 3D Viewer */}
-        <div className="flex-1 flex flex-col h-full gap-8 min-w-0 z-10">
-
-          <div className="flex-1 bg-white rounded-[32px] premium-shadow ring-1 ring-gray-100/60 relative overflow-hidden flex flex-col group">
-            <div className="absolute inset-0 bg-gradient-to-b from-gray-50/50 to-[#E8F1FC]/25" />
-            <div className="absolute inset-0 perspective-grid opacity-20" />
-
-            {/* Isometric SVG */}
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none animate-float">
-              <svg viewBox="0 0 800 600" className="w-[90%] h-[90%] max-w-[900px] drop-shadow-[0_20px_40px_rgba(20,40,160,0.15)] opacity-95">
-                <defs>
-                  <linearGradient id="wallGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#2189FF" stopOpacity="0.06" />
-                    <stop offset="100%" stopColor="#1428A0" stopOpacity="0.18" />
-                  </linearGradient>
-                  <linearGradient id="floorGradient" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0%" stopColor="#2189FF" stopOpacity="0.03" />
-                    <stop offset="100%" stopColor="#1428A0" stopOpacity="0.1" />
-                  </linearGradient>
-                </defs>
-                <path d="M400,480 L150,330 L400,180 L650,330 Z" fill="url(#floorGradient)" stroke="#2189FF" strokeWidth="2.5" strokeOpacity="0.4" />
-                <path d="M150,330 L400,480 L400,220 L150,70 Z" fill="url(#wallGradient)" stroke="#1428A0" strokeWidth="2.5" strokeOpacity="0.4" />
-                <path d="M400,480 L650,330 L650,70 L400,220 Z" fill="url(#wallGradient)" stroke="#1428A0" strokeWidth="2.5" strokeOpacity="0.4" />
-                <path d="M275,255 L525,405 M212,292 L462,442 M337,217 L587,367 M462,217 L212,367 M525,255 L275,405 M587,292 L337,442" stroke="#2189FF" strokeWidth="1.5" strokeOpacity="0.25" strokeDasharray="6 6" />
-                {/* Sofa */}
-                <path d="M330,360 L450,432 L510,396 L390,324 Z" fill="white" fillOpacity="0.9" stroke="#1428A0" strokeWidth="2.5" strokeLinejoin="round" />
-                <path d="M330,360 L330,320 L390,284 L390,324 Z" fill="white" fillOpacity="0.75" stroke="#1428A0" strokeWidth="2.5" strokeLinejoin="round" />
-                <path d="M390,284 L510,356 L510,396 L390,324 Z" fill="white" fillOpacity="0.5" stroke="#1428A0" strokeWidth="2.5" strokeLinejoin="round" />
-                {/* TV */}
-                <path d="M220,200 L350,278 L350,210 L220,132 Z" fill="#0f172a" stroke="#2189FF" strokeWidth="2.5" strokeLinejoin="round" />
-                <path d="M225,198 L345,270 L345,215 L225,143 Z" fill="#2189FF" fillOpacity="0.25" />
-                {/* AC */}
-                <path d="M450,150 L580,72 L580,90 L450,168 Z" fill="white" stroke="#1428A0" strokeWidth="2.5" strokeLinejoin="round" />
-                <path d="M450,168 L580,90 L580,100 L450,178 Z" fill="#e2e8f0" fillOpacity="0.8" stroke="#1428A0" strokeWidth="2.5" strokeLinejoin="round" />
-                {/* Nodes */}
-                <circle cx="285" cy="205" r="7" fill="#2189FF" className="node-pulse" />
-                <line x1="285" y1="205" x2="285" y2="150" stroke="#2189FF" strokeWidth="1.5" strokeDasharray="4 4" />
-                <circle cx="515" cy="120" r="7" fill="#2189FF" className="node-pulse" style={{ animationDelay: '0.5s' }} />
-                <line x1="515" y1="120" x2="515" y2="60" stroke="#2189FF" strokeWidth="1.5" strokeDasharray="4 4" />
-                <circle cx="400" cy="260" r="7" fill="#2189FF" className="node-pulse" style={{ animationDelay: '1s' }} />
-                <line x1="400" y1="260" x2="400" y2="120" stroke="#2189FF" strokeWidth="2.5" />
-              </svg>
-            </div>
-
-            {/* Viewer Controls */}
-            <div className="absolute top-8 right-8 glass-panel p-2.5 rounded-[20px] shadow-lg ring-1 ring-gray-900/5 flex flex-col gap-2 z-20 pointer-events-auto opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-              <button className="p-2.5 rounded-xl hover:bg-white hover:text-[#2189FF] text-gray-500 transition-colors shadow-sm hover:shadow"><ZoomIn size={22} strokeWidth={2.5} /></button>
-              <button className="p-2.5 rounded-xl hover:bg-white hover:text-[#2189FF] text-gray-500 transition-colors shadow-sm hover:shadow"><ZoomOut size={22} strokeWidth={2.5} /></button>
-              <div className="w-8 h-[2px] bg-gray-200/80 mx-auto my-1.5 rounded-full" />
-              <button className="p-2.5 rounded-xl hover:bg-white hover:text-[#1428A0] text-gray-500 transition-colors shadow-sm hover:shadow"><RotateCcw size={22} strokeWidth={2.5} /></button>
-              <button className="p-2.5 rounded-xl hover:bg-white hover:text-[#1428A0] text-gray-500 transition-colors shadow-sm hover:shadow"><LocateFixed size={22} strokeWidth={2.5} /></button>
-              <div className="w-8 h-[2px] bg-gray-200/80 mx-auto my-1.5 rounded-full" />
-              <button className="p-2.5 rounded-xl hover:bg-white hover:text-[#1428A0] text-gray-500 transition-colors shadow-sm hover:shadow"><Maximize size={22} strokeWidth={2.5} /></button>
-            </div>
-
-            {/* Live Badge */}
-            <div className="absolute top-8 left-8 flex gap-3 z-20 pointer-events-none">
-              <div className="glass-panel px-4 py-2.5 rounded-xl text-sm font-bold text-[#1428A0] ring-1 ring-gray-900/5 shadow-sm flex items-center gap-2">
-                <Activity size={18} strokeWidth={2.5} /> Live Sync Active
+        {/* ── TOP BAR: Minimal info + controls ────────────────────────── */}
+        <div className="absolute top-0 left-0 right-0 z-20 pointer-events-none">
+          <div className="flex items-center justify-between px-6 py-4">
+            {/* Left: Title + status */}
+            <div className="flex items-center gap-4 pointer-events-auto">
+              <div className="bg-black/40 backdrop-blur-md px-5 py-3 rounded-2xl border border-white/10 flex items-center gap-3">
+                <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                <span className="text-white/90 font-bold text-sm tracking-tight">AEGIS Digital Twin</span>
+                <span className="text-white/40 text-xs">•</span>
+                <span className="text-white/50 text-xs font-medium">{roomNamesMap[activeRoom]}</span>
               </div>
             </div>
-          </div>
 
-          {/* Stats Bar */}
-          <div className="bg-white rounded-[28px] premium-shadow ring-1 ring-gray-100/60 p-7 flex items-center justify-between z-20 shrink-0">
-            <div className="flex items-center gap-8 lg:gap-14 pl-2">
-              <div>
-                <p className="text-[11px] font-bold tracking-widest text-gray-400 uppercase mb-1.5">Current Room</p>
-                <p className="text-[22px] font-bold text-gray-900 leading-none tracking-tight">{activeRoom}</p>
-              </div>
-              <div className="w-[1px] h-12 bg-gray-100" />
-              <div>
-                <p className="text-[11px] font-bold tracking-widest text-gray-400 uppercase mb-1.5">Energy Score</p>
-                <p className="text-[22px] font-bold text-green-600 leading-none flex items-center gap-1.5 tracking-tight">
-                  89<span className="text-base font-bold text-gray-400">/100</span>
-                </p>
-              </div>
-              <div className="w-[1px] h-12 bg-gray-100 hidden xl:block" />
-              <div className="hidden xl:block">
-                <p className="text-[11px] font-bold tracking-widest text-gray-400 uppercase mb-1.5">Current Usage</p>
-                <p className="text-[22px] font-bold text-gray-900 leading-none tracking-tight">2.4 kWh</p>
-              </div>
-              <div className="w-[1px] h-12 bg-gray-100" />
-              <div>
-                <p className="text-[11px] font-bold tracking-widest text-gray-400 uppercase mb-1.5">Devices</p>
-                <p className="text-[22px] font-bold text-[#1428A0] leading-none tracking-tight">5</p>
-              </div>
-            </div>
-            <div className="flex gap-4">
+            {/* Right: Quick action buttons */}
+            <div className="flex items-center gap-2 pointer-events-auto">
+              {/* Ceiling toggle */}
               <button
-                onClick={() => router.push('/analytics')}
-                className="px-6 py-4 rounded-xl border-2 border-gray-100 bg-white text-gray-700 font-bold text-[15px] hover:bg-gray-50 hover:border-gray-200 hover:text-gray-900 transition-all active:scale-[0.98]"
+                onClick={() => setCeilingVisible(!ceilingVisible)}
+                className={`p-2.5 rounded-xl backdrop-blur-md border transition-all ${ceilingVisible ? 'bg-[#1428A0]/80 border-[#1428A0]/50 text-white' : 'bg-black/40 border-white/10 text-white/60 hover:text-white hover:bg-black/60'}`}
+                title={ceilingVisible ? "Hide Ceiling" : "Show Ceiling"}
               >
-                View Analytics
+                {ceilingVisible ? <Eye size={18} /> : <EyeOff size={18} />}
               </button>
+              {/* Focus toggle */}
               <button
-                onClick={() => router.push('/simulation')}
-                className="px-7 py-4 rounded-xl bg-[#1428A0] text-white font-bold text-[15px] hover:bg-[#102080] transition-all shadow-[0_4px_14px_rgba(20,40,160,0.25)] hover:shadow-[0_6px_20px_rgba(20,40,160,0.35)] active:scale-[0.98] flex items-center gap-2.5"
+                onClick={() => setFocusMode(!focusMode)}
+                className={`p-2.5 rounded-xl backdrop-blur-md border transition-all ${focusMode ? 'bg-[#1428A0]/80 border-[#1428A0]/50 text-white' : 'bg-black/40 border-white/10 text-white/60 hover:text-white hover:bg-black/60'}`}
+                title={focusMode ? "Disable Focus" : "Enable Focus"}
               >
-                <FlaskConical size={18} strokeWidth={2.5} /> Run Simulation
+                <LocateFixed size={18} />
+              </button>
+              {/* Reset */}
+              <button
+                onClick={() => {
+                  setActiveRoom('all');
+                  setCeilingVisible(false);
+                  setFocusMode(true);
+                }}
+                className="p-2.5 rounded-xl bg-black/40 backdrop-blur-md border border-white/10 text-white/60 hover:text-white hover:bg-black/60 transition-all"
+                title="Reset View"
+              >
+                <RotateCcw size={18} />
               </button>
             </div>
           </div>
         </div>
 
-        {/* RIGHT: Devices */}
-        <div className="w-[340px] flex flex-col shrink-0 h-full z-20">
-          <div className="flex items-center justify-between mb-6 px-1.5">
-            <h3 className="text-xs font-bold tracking-widest uppercase text-gray-400">Connected Devices</h3>
-            <span className="text-xs font-bold text-[#2189FF] bg-blue-50/80 ring-1 ring-blue-100/50 px-2.5 py-1 rounded-md shadow-sm">5 Online</span>
-          </div>
-          <div className="flex flex-col gap-4 overflow-y-auto pb-4 pr-3 scroll-smooth">
-            <DeviceCard icon={Wind}     name="Samsung WindFree AC" status="Online"  power="ON"  consumption="1.2 kWh" />
-            <DeviceCard icon={Tv}       name="Samsung Frame TV"    status="Online"  power="ON"  consumption="0.8 kWh" />
-            <DeviceCard icon={Lightbulb} name="Smart Lighting"     status="Online"  power="ON"  consumption="0.3 kWh" />
-            <DeviceCard icon={Blinds}   name="Smart Curtains"      status="Online"  power="OFF" />
-            <DeviceCard icon={Fan}      name="Ceiling Fan"         status="Offline" power="OFF" />
+        {/* ── LEFT EDGE: Room selector pills ──────────────────────────── */}
+        <div className="absolute left-5 top-1/2 -translate-y-1/2 z-20 pointer-events-auto">
+          <div className="flex flex-col gap-2">
+            {roomList.map((room) => {
+              const isActive = activeRoom === room.id;
+              const Icon = room.icon;
+              return (
+                <button
+                  key={room.id}
+                  onClick={() => setActiveRoom(room.id)}
+                  className={`group relative flex items-center gap-3 transition-all duration-300 rounded-2xl border backdrop-blur-md
+                    ${isActive
+                      ? 'bg-[#1428A0]/90 border-[#1428A0]/60 text-white px-5 py-3 shadow-[0_0_20px_rgba(20,40,160,0.4)]'
+                      : 'bg-black/40 border-white/10 text-white/70 hover:text-white hover:bg-black/60 px-3.5 py-3 hover:px-5'
+                    }`}
+                  title={room.label}
+                >
+                  <span className={`font-black text-xs shrink-0 ${isActive ? 'text-white' : 'text-white/80'}`}>
+                    {room.letter}
+                  </span>
+                  <span className={`text-[13px] font-bold tracking-tight whitespace-nowrap overflow-hidden transition-all duration-300
+                    ${isActive ? 'max-w-[150px] opacity-100' : 'max-w-0 opacity-0 group-hover:max-w-[150px] group-hover:opacity-100'}`}>
+                    {room.label}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
+
+        {/* ── BOTTOM CENTER: Perspective toggle + info ─────────────────── */}
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 pointer-events-auto">
+          <div className="bg-black/50 backdrop-blur-xl px-5 py-3 rounded-2xl border border-white/10 flex items-center gap-4">
+            {/* Perspective switcher */}
+            {activeRoom !== 'all' && (
+              <>
+                <div className="flex bg-white/10 p-0.5 rounded-xl">
+                  <button
+                    onClick={() => setViewMode('isometric')}
+                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'isometric' ? 'bg-white text-gray-900 shadow-sm' : 'text-white/60 hover:text-white'}`}
+                  >
+                    Aerial
+                  </button>
+                  <button
+                    onClick={() => setViewMode('interior')}
+                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'interior' ? 'bg-white text-gray-900 shadow-sm' : 'text-white/60 hover:text-white'}`}
+                  >
+                    Traverse
+                  </button>
+                </div>
+                <div className="w-px h-6 bg-white/20" />
+              </>
+            )}
+
+            {/* Quick stats */}
+            <div className="flex items-center gap-4 text-xs">
+              <div>
+                <span className="text-white/40 font-bold uppercase tracking-wider">Devices</span>
+                <span className="text-white font-bold ml-2">{activeDevices.length}</span>
+              </div>
+              <div className="w-px h-4 bg-white/20" />
+              <div>
+                <span className="text-white/40 font-bold uppercase tracking-wider">Load</span>
+                <span className="text-white font-bold ml-2">
+                  {(activeDevices.reduce((acc, d) => acc + (d.power === 'ON' ? parseFloat(d.consumption || '0') : 0), 0)).toFixed(1)} kWh
+                </span>
+              </div>
+            </div>
+
+            <div className="w-px h-6 bg-white/20" />
+
+            {/* Hint */}
+            <div className="flex items-center gap-1.5 text-white/30 text-[10px] font-medium">
+              <Move3D size={14} />
+              <span>Scroll to zoom • Drag to rotate</span>
+            </div>
+          </div>
+        </div>
+
+        {/* ── RIGHT DRAWER: Devices (toggle) ──────────────────────────── */}
+        <button
+          onClick={() => setRightPanelOpen(!rightPanelOpen)}
+          className="absolute top-1/2 -translate-y-1/2 right-0 z-30 w-8 h-20 bg-black/50 backdrop-blur-md border border-r-0 border-white/10 text-white/60 hover:text-white flex items-center justify-center rounded-l-xl transition-all pointer-events-auto hover:bg-black/70"
+          title={rightPanelOpen ? "Close Devices" : "Open Devices"}
+        >
+          {rightPanelOpen ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+        </button>
+
+        <div className={`absolute top-4 right-0 bottom-4 w-[340px] z-20 transition-transform duration-300 ease-in-out ${rightPanelOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+          <div className="bg-black/50 backdrop-blur-xl p-5 rounded-l-[24px] border border-r-0 border-white/10 h-full flex flex-col overflow-hidden pointer-events-auto">
+            <div className="flex items-center justify-between mb-4 px-1">
+              <h3 className="text-xs font-bold tracking-widest uppercase text-white/50">Connected Devices</h3>
+              <span className="text-xs font-bold text-green-400 bg-green-400/10 ring-1 ring-green-400/20 px-2.5 py-1 rounded-md">
+                {activeDevices.filter(d => d.status === 'Online').length} Online
+              </span>
+            </div>
+            <div className="flex flex-col gap-3 overflow-y-auto pb-4 pr-1 scroll-smooth flex-1">
+              {activeDevices.map((device, idx) => (
+                <DeviceCard
+                  key={idx}
+                  icon={device.icon}
+                  name={device.name}
+                  status={device.status}
+                  power={device.power}
+                  consumption={device.consumption}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Floating AI Button */}
+        <button
+          onClick={() => router.push('/ai-assistant')}
+          className="absolute bottom-6 right-6 z-30 bg-gradient-to-r from-[#1428A0] to-[#2189FF] text-white pl-4 pr-5 py-3 rounded-full shadow-[0_8px_30px_rgba(33,137,255,0.4)] hover:shadow-[0_12px_40px_rgba(33,137,255,0.6)] hover:-translate-y-1 transition-all duration-300 flex items-center gap-2.5 font-bold text-[13px] group ring-2 ring-white/20"
+        >
+          <div className="bg-white/20 p-2 rounded-full backdrop-blur-sm group-hover:scale-110 transition-transform">
+            <Sparkles size={16} className="text-white fill-white" />
+          </div>
+          ASGUARD AI
+        </button>
       </div>
-
-      {/* Floating AI Button */}
-      <button
-        onClick={() => router.push('/ai-assistant')}
-        className="absolute bottom-12 right-12 z-50 bg-gradient-to-r from-[#1428A0] to-[#2189FF] text-white pl-5 pr-6 py-4 rounded-full shadow-[0_8px_30px_rgba(33,137,255,0.4)] hover:shadow-[0_12px_40px_rgba(33,137,255,0.6)] hover:-translate-y-1 transition-all duration-300 flex items-center gap-3 font-bold text-[15px] group ring-4 ring-white"
-      >
-        <div className="bg-white/20 p-2.5 rounded-full backdrop-blur-sm group-hover:scale-110 transition-transform">
-          <Sparkles size={20} className="text-white fill-white" />
-        </div>
-        Ask ASGUARD AI
-      </button>
     </AppLayout>
   )
 }
