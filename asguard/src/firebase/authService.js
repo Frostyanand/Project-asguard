@@ -150,7 +150,6 @@ export const createUserProfile = async (user, displayNameOverride = "") => {
     name,
     email,
     photoURL,
-    houseId: "HOUSE001",
     houseName: "Smart Villa Chennai",
     houseLocation: "Chennai, Tamil Nadu, India",
     createdAt: new Date().toISOString(),
@@ -161,59 +160,12 @@ export const createUserProfile = async (user, displayNameOverride = "") => {
     return newProfile;
   }
 
-  // Non-blocking background sync so Firestore quota limitations or network retries never freeze authentication
+  // Non-blocking background sync
   (async () => {
     try {
       const userDocRef = doc(db, "users", targetUid);
       await setDoc(userDocRef, newProfile, { merge: true });
       console.log("[Auth Audit] Firestore Profile Created successfully for UID:", targetUid);
-
-      // Create Default House
-      const houseDocRef = doc(db, "houses", "HOUSE001");
-      await setDoc(
-        houseDocRef,
-        {
-          houseId: "HOUSE001",
-          ownerUid: targetUid,
-          houseName: "Smart Villa Chennai",
-          location: "Chennai, Tamil Nadu, India",
-          climate: "Hot and Humid Tropical",
-          totalRooms: 6,
-          totalAppliances: 30,
-          createdAt: new Date().toISOString(),
-        },
-        { merge: true }
-      );
-
-      // Create Default Rooms
-      const rooms = [
-        { roomId: "ROOM001", roomName: "Living Room", roomType: "living_room" },
-        { roomId: "ROOM002", roomName: "Bedroom 1 (Master)", roomType: "bedroom" },
-        { roomId: "ROOM003", roomName: "Bedroom 2", roomType: "bedroom" },
-        { roomId: "ROOM004", roomName: "Kitchen", roomType: "kitchen" },
-        { roomId: "ROOM005", roomName: "Bathroom", roomType: "bathroom" },
-        { roomId: "ROOM006", roomName: "Toilet", roomType: "toilet" },
-      ];
-      for (const room of rooms) {
-        const roomRef = doc(db, "houses", "HOUSE001", "rooms", room.roomId);
-        await setDoc(roomRef, room, { merge: true });
-      }
-
-      // Create Default Device
-      const sampleDeviceRef = doc(db, "houses", "HOUSE001", "appliances", "LR_AC_001");
-      await setDoc(
-        sampleDeviceRef,
-        {
-          applianceId: "LR_AC_001",
-          applianceName: "Samsung WindFree AC",
-          applianceType: "ac",
-          roomId: "ROOM001",
-          roomName: "Living Room",
-          ratedPowerWatts: 1500,
-          dailyLimitKwh: 6.0,
-        },
-        { merge: true }
-      );
     } catch (dbErr) {
       console.warn("[Auth Audit Firestore Sync Warning] Code:", dbErr?.code, "Message:", dbErr?.message);
     }

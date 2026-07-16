@@ -1,6 +1,13 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '../../context/AuthContext'
+import {
+  fetchUserProfile,
+  fetchLatestDeviceStates,
+  getUniqueRooms,
+} from '../../firebase/firestoreService'
 import {
   CheckCircle2,
   UploadCloud,
@@ -54,6 +61,31 @@ function GuidelineItem({ text }) {
 // ── UploadRoomVideo Page ───────────────────────────────────────────────────────
 export default function UploadRoomVideo() {
   const router = useRouter()
+  const { currentUser } = useAuth()
+
+  const [roomTypeOptions, setRoomTypeOptions] = useState([
+    'Living Room', 'Bedroom', 'Kitchen', 'Bathroom', 'Dining Room', 'Office', 'Balcony', 'Custom'
+  ])
+
+  // Load room types from energy_logs
+  useEffect(() => {
+    async function loadRooms() {
+      if (!currentUser?.uid) return
+      try {
+        const userProfile = await fetchUserProfile(currentUser.uid)
+        const houseId = userProfile?.house_id || userProfile?.houseId || 'HOUSE001'
+        const latestLogs = await fetchLatestDeviceStates(houseId)
+        const uniqueRooms = getUniqueRooms(latestLogs)
+        if (uniqueRooms.length > 0) {
+          const names = uniqueRooms.map(r => r.roomName)
+          setRoomTypeOptions([...names, 'Custom'])
+        }
+      } catch {
+        // keep defaults on error
+      }
+    }
+    loadRooms()
+  }, [currentUser?.uid])
 
   const guidelines = [
     'Walk Slowly', 'Keep Camera Stable',
@@ -76,7 +108,7 @@ export default function UploadRoomVideo() {
             <h3 className="text-xl font-bold text-gray-900 mb-8 tracking-tight">Room Information</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8">
               <FormInput label="Room Name" placeholder="e.g. Master Bedroom" />
-              <FormSelect label="Room Type" options={['Living Room', 'Bedroom', 'Kitchen', 'Bathroom', 'Dining Room', 'Office', 'Balcony', 'Custom']} />
+              <FormSelect label="Room Type" options={roomTypeOptions} />
               <FormSelect label="Floor" options={['Ground Floor', 'First Floor', 'Second Floor']} />
               <FormSelect label="Approximate Room Size" options={['Small', 'Medium', 'Large']} />
             </div>

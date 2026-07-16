@@ -1,13 +1,23 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../../context/AuthContext'
+import { db } from '../../firebase/client'
+import { doc, updateDoc } from 'firebase/firestore'
 import {
-  User, Mail, MapPin, Map,
-  Home, Users, Grid, Wifi, Bell, Moon, Languages, Shield,
+  fetchUserProfile,
+  fetchLogCount,
+  fetchWeeklyLogs,
+  getUniqueRooms,
+  getUniqueDevices,
+  generateAutomationRules,
+} from '../../firebase/firestoreService'
+import {
+  User, Mail, MapPin,
+  Home, Grid, Wifi, Bell, Moon, Languages, Shield,
   Key, Smartphone, Lock, Activity, Zap, Lightbulb, CheckCircle2,
-  Camera, Edit3, LogOut, Check, Phone, Building, Flag, Settings, Loader2
+  Camera, Edit3, LogOut, Check, Settings, Loader2, AlertTriangle, Calendar
 } from 'lucide-react'
 import Header from '../../components/Header'
 import AppLayout from '../../components/AppLayout'
@@ -50,15 +60,117 @@ function SettingRow({ icon: Icon, title, description, active, disabled }) {
 
 export default function Profile() {
   const router = useRouter()
-  const { currentUser, logout, updateProfile } = useAuth()
+  const { currentUser, loading: authLoading, logout } = useAuth()
+
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  const [userData, setUserData] = useState(null)
+  
+  // Stats derived from energy_logs
+  const [stats, setStats] = useState({
+    totalRooms: 0,
+    totalAppliances: 0,
+    climate: 'Hot and Humid Tropical',
+    totalEnergyMonitored: '0 kWh',
+    totalLogs: 0,
+    anomalyEventsCount: 0,
+    activeRulesCount: 0,
+  })
 
   const [isEditing, setIsEditing] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
 
-  const [name, setName] = useState(currentUser?.name || 'SmartThings User')
-  const [houseName, setHouseName] = useState(currentUser?.houseName || 'Smart Villa Chennai')
-  const [houseLocation, setHouseLocation] = useState(currentUser?.houseLocation || 'Chennai, Tamil Nadu, India')
+  const [name, setName] = useState('')
+  const [houseName, setHouseName] = useState('')
+  const [houseLocation, setHouseLocation] = useState('')
+
+  useEffect(() => {
+    let isMounted = true
+
+    async function fetchFirestoreData() {
+      if (!currentUser?.uid) {
+        if (isMounted) setLoading(false)
+        return
+      }
+
+      setLoading(true)
+      setError(null)
+
+      try {
+        // Query 1: Read users/{uid}
+        const uData = await fetchUserProfile(currentUser.uid)
+
+        if (!uData) {
+          if (isMounted) {
+            setError(`User document not found in Firestore.`)
+            setLoading(false)
+          }
+          return
+        }
+
+        const fetchedUser = {
+          name: uData.name || '',
+          email: uData.email || currentUser.email || '',
+          photoURL: uData.photoURL || currentUser.photoURL || '',
+          houseName: uData.houseName || 'Smart Villa Chennai',
+          houseLocation: uData.houseLocation || 'Chennai, Tamil Nadu, India',
+          createdAt: uData.createdAt || '',
+          updatedAt: uData.updatedAt || '',
+        }
+
+        if (isMounted) {
+          setUserData(fetchedUser)
+          setName(fetchedUser.name)
+          setHouseName(fetchedUser.houseName)
+          setHouseLocation(fetchedUser.houseLocation)
+        }
+
+        const houseId = uData.house_id || uData.houseId || 'HOUSE001'
+
+        // Fetch logs to compute profile stats
+        const [totalLogCount, weeklyLogs] = await Promise.all([
+          fetchLogCount(houseId),
+          fetchWeeklyLogs(houseId),
+        ])
+
+        const uniqueRooms = getUniqueRooms(weeklyLogs)
+        const uniqueDevices = getUniqueDevices(weeklyLogs)
+        const rules = generateAutomationRules(weeklyLogs)
+        
+        const totalEnergy = weeklyLogs.reduce((sum, l) => sum + (Number(l.energy_kwh) || 0), 0)
+        const anomalyEvents = weeklyLogs.filter((l) => l.ai_flag !== 'Normal' || l.threshold_exceeded).length
+        const latestLog = weeklyLogs[0]
+        const derivedClimate = latestLog?.weather ? `${latestLog.weather} Climate` : 'Hot and Humid Tropical'
+
+        if (isMounted) {
+          setStats({
+            totalRooms: uniqueRooms.length,
+            totalAppliances: uniqueDevices.length,
+            climate: derivedClimate,
+            totalEnergyMonitored: `${totalEnergy.toFixed(1)} kWh`,
+            totalLogs: totalLogCount,
+            anomalyEventsCount: anomalyEvents,
+            activeRulesCount: rules.length,
+          })
+          setLoading(false)
+        }
+      } catch (err) {
+        console.error('Error fetching profile data from Firestore:', err)
+        if (isMounted) {
+          setError(`Failed to load profile data: ${err.message}`)
+          setLoading(false)
+        }
+      }
+    }
+
+    fetchFirestoreData()
+
+    return () => {
+      isMounted = false
+    }
+  }, [currentUser?.uid])
 
   const handleLogout = async () => {
     try {
@@ -70,14 +182,23 @@ export default function Profile() {
   }
 
   const handleSaveChanges = async () => {
+    if (!currentUser?.uid) return
     setIsSaving(true)
     setSaveSuccess(false)
     try {
-      await updateProfile({
+      const now = new Date().toISOString()
+
+      // Update user doc
+      const userRef = doc(db, 'users', currentUser.uid)
+      await updateDoc(userRef, {
         name,
         houseName,
         houseLocation,
+        updatedAt: now,
       })
+
+      setUserData((prev) => prev ? { ...prev, name, houseName, houseLocation, updatedAt: now } : prev)
+
       setSaveSuccess(true)
       setIsEditing(false)
       setTimeout(() => setSaveSuccess(false), 3000)
@@ -89,10 +210,21 @@ export default function Profile() {
   }
 
   const getInitials = (userName) => {
-    if (!userName) return "ST"
-    const parts = userName.split(" ")
+    if (!userName) return "U"
+    const parts = userName.trim().split(" ")
     if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
     return userName.slice(0, 2).toUpperCase()
+  }
+
+  if (authLoading || loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#F7F9FC]">
+        <div className="flex flex-col items-center gap-3 text-gray-500">
+          <Loader2 size={36} className="animate-spin text-[#1428A0]" />
+          <p className="text-sm font-semibold">Loading profile data...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -103,19 +235,26 @@ export default function Profile() {
       <div className="flex-1 overflow-y-auto px-6 lg:px-10 pb-16 scroll-smooth">
         <div className="max-w-[1400px] mx-auto space-y-6 lg:space-y-8">
           
+          {error && (
+            <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm font-semibold flex items-center gap-3">
+              <AlertTriangle size={20} className="text-amber-600 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
           {/* PROFILE CARD */}
           <div className="bg-white rounded-[24px] p-8 lg:p-10 premium-shadow ring-1 ring-gray-100/50 flex flex-col md:flex-row items-center md:items-start gap-8">
             <div className="relative group cursor-pointer">
               <div className="w-32 h-32 rounded-full bg-gradient-to-tr from-[#1428A0] to-[#2189FF] p-[3px]">
-                {currentUser?.photoURL ? (
+                {userData?.photoURL ? (
                   <img
-                    src={currentUser.photoURL}
-                    alt={currentUser.name}
+                    src={userData.photoURL}
+                    alt={userData.name || 'User Profile'}
                     className="w-full h-full rounded-full object-cover border-4 border-white"
                   />
                 ) : (
                   <div className="w-full h-full rounded-full bg-gradient-to-tr from-[#1428A0] to-[#2189FF] text-white flex items-center justify-center font-bold text-3xl border-4 border-white">
-                    {getInitials(currentUser?.name || name)}
+                    {getInitials(userData?.name)}
                   </div>
                 )}
               </div>
@@ -126,12 +265,15 @@ export default function Profile() {
             
             <div className="flex-1 text-center md:text-left">
               <h2 className="text-3xl font-bold text-gray-900 tracking-tight mb-2">
-                {currentUser?.name || 'SmartThings User'}
+                {userData?.name || 'User Profile'}
               </h2>
-              <div className="flex flex-col md:flex-row items-center justify-center md:justify-start gap-2 md:gap-6 text-sm font-medium text-gray-500 mb-6">
-                <span className="flex items-center gap-1.5"><Mail size={16} className="text-[#2189FF]" /> {currentUser?.email || "user@smartthings.samsung.com"}</span>
+              <div className="flex flex-col md:flex-row items-center justify-center md:justify-start gap-2 md:gap-6 text-sm font-medium text-gray-500 mb-6 flex-wrap">
+                <span className="flex items-center gap-1.5"><Mail size={16} className="text-[#2189FF]" /> {userData?.email || ''}</span>
                 <span className="flex items-center gap-1.5"><CheckCircle2 size={16} className="text-green-500" /> SmartThings Auth Synced</span>
-                <span className="flex items-center gap-1.5"><Shield size={16} className="text-orange-500" /> UID: {currentUser?.uid ? `${currentUser.uid.substring(0, 8)}...` : 'AUTH-FIREBASE'}</span>
+                <span className="flex items-center gap-1.5"><Shield size={16} className="text-orange-500" /> UID: {currentUser?.uid ? `${currentUser.uid.substring(0, 8)}...` : ''}</span>
+                {userData?.createdAt && (
+                  <span className="flex items-center gap-1.5"><Calendar size={16} className="text-purple-500" /> Joined: {new Date(userData.createdAt).toLocaleDateString()}</span>
+                )}
               </div>
               <button 
                 onClick={() => setIsEditing(!isEditing)}
@@ -182,7 +324,7 @@ export default function Profile() {
                       </div>
                       <input 
                         type="email" 
-                        value={currentUser?.email || ""}
+                        value={userData?.email || ''}
                         disabled
                         className="w-full pl-11 pr-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm text-gray-900 opacity-70 cursor-not-allowed" 
                       />
@@ -222,7 +364,7 @@ export default function Profile() {
                   </div>
                 </div>
               </div>
-
+ 
               {/* SMART HOME INFORMATION */}
               <div className="bg-white rounded-[24px] p-8 lg:p-10 premium-shadow ring-1 ring-gray-100/50">
                 <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
@@ -237,22 +379,22 @@ export default function Profile() {
                   <div className="p-4 rounded-2xl bg-[#F7F9FC] border border-gray-100 flex flex-col gap-2">
                     <MapPin size={18} className="text-[#2189FF]" />
                     <span className="text-[11px] font-bold tracking-wider text-gray-500 uppercase">Region</span>
-                    <span className="text-sm font-semibold text-gray-900">Chennai, Tamil Nadu</span>
+                    <span className="text-sm font-semibold text-gray-900">{userData?.houseLocation || 'N/A'}</span>
                   </div>
                   <div className="p-4 rounded-2xl bg-[#F7F9FC] border border-gray-100 flex flex-col gap-2">
-                    <Users size={18} className="text-[#2189FF]" />
-                    <span className="text-[11px] font-bold tracking-wider text-gray-500 uppercase">Family Members</span>
-                    <span className="text-sm font-semibold text-gray-900">4 Occupants</span>
+                    <Activity size={18} className="text-[#2189FF]" />
+                    <span className="text-[11px] font-bold tracking-wider text-gray-500 uppercase">Climate</span>
+                    <span className="text-sm font-semibold text-gray-900">{stats.climate}</span>
                   </div>
                   <div className="p-4 rounded-2xl bg-[#F7F9FC] border border-gray-100 flex flex-col gap-2">
                     <Grid size={18} className="text-[#2189FF]" />
                     <span className="text-[11px] font-bold tracking-wider text-gray-500 uppercase">Monitored Rooms</span>
-                    <span className="text-sm font-semibold text-gray-900">6 Rooms</span>
+                    <span className="text-sm font-semibold text-gray-900">{stats.totalRooms} Rooms</span>
                   </div>
                   <div className="p-4 rounded-2xl bg-[#F7F9FC] border border-gray-100 flex flex-col gap-2 md:col-span-2">
                     <Wifi size={18} className="text-[#2189FF]" />
                     <span className="text-[11px] font-bold tracking-wider text-gray-500 uppercase">Connected IoT Devices</span>
-                    <span className="text-sm font-semibold text-gray-900">30 SmartThings Appliances</span>
+                    <span className="text-sm font-semibold text-gray-900">{stats.totalAppliances} SmartThings Appliances</span>
                   </div>
                 </div>
               </div>
@@ -295,6 +437,15 @@ export default function Profile() {
                     </div>
                     <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-2.5 py-1 rounded-md uppercase">ENABLED</span>
                   </div>
+                  <div className="p-4 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Shield size={18} className="text-gray-600" />
+                      <div>
+                        <span className="text-sm font-semibold text-gray-900 block">House Owner UID</span>
+                        <span className="text-xs text-gray-500 font-mono">{currentUser?.uid || 'N/A'}</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -303,10 +454,10 @@ export default function Profile() {
 
           {/* STATISTICS ROW */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
-            <StatCard icon={Zap} label="Total Energy Monitored" value="1,348 kWh" colorClass="text-green-500" bgClass="bg-green-50" />
-            <StatCard icon={Activity} label="Firestore Records Streamed" value="20,500" colorClass="text-[#2189FF]" bgClass="bg-blue-50" />
-            <StatCard icon={Lightbulb} label="AI Anomaly Rules" value="10 Events" colorClass="text-orange-500" bgClass="bg-orange-50" />
-            <StatCard icon={Settings} label="Active Automations" value="8 Rules" colorClass="text-[#1428A0]" bgClass="bg-[#1428A0]/10" />
+            <StatCard icon={Zap} label="Total Energy Monitored" value={stats.totalEnergyMonitored} colorClass="text-green-500" bgClass="bg-green-50" />
+            <StatCard icon={Activity} label="Firestore Records Streamed" value={stats.totalLogs.toLocaleString()} colorClass="text-[#2189FF]" bgClass="bg-blue-50" />
+            <StatCard icon={Lightbulb} label="AI Anomaly Events" value={`${stats.anomalyEventsCount} Events`} colorClass="text-orange-500" bgClass="bg-orange-50" />
+            <StatCard icon={Settings} label="Active Automations" value={`${stats.activeRulesCount} Rules`} colorClass="text-[#1428A0]" bgClass="bg-[#1428A0]/10" />
           </div>
 
           {/* BOTTOM ACTIONS */}

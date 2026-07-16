@@ -47,8 +47,6 @@ export const AuthProvider = ({ children }) => {
           name: firebaseUser.displayName || firebaseUser.email?.split("@")[0] || "SmartThings User",
           email: firebaseUser.email || "",
           photoURL: firebaseUser.photoURL || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200",
-          houseName: "Smart Villa Chennai",
-          houseLocation: "Chennai, Tamil Nadu, India",
         };
         setCurrentUser(basicProfile);
         setLoading(false);
@@ -84,8 +82,6 @@ export const AuthProvider = ({ children }) => {
         name: user.displayName || user.email?.split("@")[0] || "SmartThings User",
         email: user.email || "",
         photoURL: user.photoURL || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200",
-        houseName: "Smart Villa Chennai",
-        houseLocation: "Chennai, Tamil Nadu, India",
       };
       setCurrentUser(basicProfile);
 
@@ -114,8 +110,6 @@ export const AuthProvider = ({ children }) => {
         name: user.displayName || email.split("@")[0] || "SmartThings User",
         email: user.email || email,
         photoURL: user.photoURL || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200",
-        houseName: "Smart Villa Chennai",
-        houseLocation: "Chennai, Tamil Nadu, India",
       };
       setCurrentUser(basicProfile);
       return basicProfile;
