@@ -1,1 +1,19 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Environment Variables & Keys
+.env
+.env.local
 database/serviceAccountKey.json
+
+# Build Outputs
+dist/
+build/
+.next/
+**/.next/
+
+# Logs & System Files
+*.log
+.DS_Store
+database/.DS_Store

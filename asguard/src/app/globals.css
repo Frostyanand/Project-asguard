@@ -1,26 +1,191 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
+/* ── Root Variables ────────────────────────────────────── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --samsung-blue: #1428A0;
+  --accent-blue: #2189FF;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ── Base Reset ────────────────────────────────────────── */
+* {
+  box-sizing: border-box;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Inter', sans-serif;
+  margin: 0;
+  padding: 0;
+  background-color: #F7F9FC;
 }
+
+/* ── Shared Utility Classes ────────────────────────────── */
+.premium-shadow {
+  box-shadow: 0 8px 32px rgba(20, 40, 160, 0.04), 0 1px 4px rgba(0, 0, 0, 0.02);
+}
+
+.glass-panel {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+}
+
+/* ── Custom Scrollbar (Chat) ───────────────────────────── */
+.chat-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.chat-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.chat-scroll::-webkit-scrollbar-thumb {
+  background: rgba(20, 40, 160, 0.1);
+  border-radius: 10px;
+}
+.chat-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(20, 40, 160, 0.2);
+}
+
+/* ── Animations ────────────────────────────────────────── */
+
+/* Float (Login illustration) */
+@keyframes float {
+  0%   { transform: translateY(0px); }
+  50%  { transform: translateY(-12px); }
+  100% { transform: translateY(0px); }
+}
+@keyframes float-delayed {
+  0%   { transform: translateY(0px); }
+  50%  { transform: translateY(-10px); }
+  100% { transform: translateY(0px); }
+}
+.animate-float          { animation: float 6s ease-in-out infinite; }
+.animate-float-delayed  { animation: float-delayed 7s ease-in-out 1s infinite; }
+.animate-float-slow     { animation: float 8s ease-in-out 2s infinite; }
+
+/* Scan Beam (Login) */
+@keyframes scan-beam {
+  0%   { opacity: 0.1; transform: scaleY(0.95); }
+  50%  { opacity: 0.4; transform: scaleY(1.05); }
+  100% { opacity: 0.1; transform: scaleY(0.95); }
+}
+.animate-scan { animation: scan-beam 3s ease-in-out infinite; transform-origin: top center; }
+
+/* Pulse glow (Login nodes) */
+@keyframes pulse-glow {
+  0%   { box-shadow: 0 0 0 0 rgba(33, 137, 255, 0.4); }
+  70%  { box-shadow: 0 0 0 15px rgba(33, 137, 255, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(33, 137, 255, 0); }
+}
+.animate-glow { animation: pulse-glow 2.5s infinite; }
+
+/* Fade-in-up (Login) */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-in-up   { animation: fade-in-up 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; opacity: 0; }
+.delay-100    { animation-delay: 100ms; }
+.delay-200    { animation-delay: 200ms; }
+.delay-300    { animation-delay: 300ms; }
+
+/* Chart line draw (Dashboard / Analytics) */
+@keyframes drawLine {
+  to { stroke-dashoffset: 0; }
+}
+.chart-line {
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+  animation: drawLine 2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Chart fill fade (Dashboard) */
+@keyframes fadeIn {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+.chart-fill { animation: fadeIn 2.5s ease-out forwards; opacity: 0; }
+
+/* Bar grow (Analytics) */
+@keyframes growUp {
+  from { transform: scaleY(0); }
+  to   { transform: scaleY(1); }
+}
+.bar-grow {
+  transform-origin: bottom;
+  animation: growUp 1.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Donut segment (Analytics) */
+@keyframes drawDonut {
+  from { stroke-dasharray: 0 100; }
+}
+.donut-segment { animation: drawDonut 1.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+/* Pulse ring (Dashboard) */
+@keyframes pulseRing {
+  0%   { transform: scale(0.8); opacity: 0.5; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+.pulse-ring { animation: pulseRing 3s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+
+/* Circular progress (GeneratingTwin) */
+.progress-ring__circle {
+  transition: stroke-dashoffset 2s ease-out;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+  stroke-dasharray: 440;
+  stroke-dashoffset: 123.2;
+  animation: progressFill 2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes progressFill {
+  from { stroke-dashoffset: 440; }
+  to   { stroke-dashoffset: 123.2; }
+}
+
+/* Animated dashed line (GeneratingTwin pipeline) */
+.animated-dashed-line {
+  height: 2px;
+  background-image: linear-gradient(to right, #2189FF 50%, transparent 50%);
+  background-size: 14px 2px;
+  background-repeat: repeat-x;
+  animation: moveDashes 1.2s linear infinite;
+}
+@keyframes moveDashes {
+  0%   { background-position: 0 0; }
+  100% { background-position: -14px 0; }
+}
+
+/* Pulse glow button (GeneratingTwin) */
+.pulse-glow {
+  animation: pulseGlow 2.5s infinite;
+}
+@keyframes pulseGlow {
+  0%   { box-shadow: 0 0 0 0 rgba(33, 137, 255, 0.3); }
+  70%  { box-shadow: 0 0 0 14px rgba(33, 137, 255, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(33, 137, 255, 0); }
+}
+
+/* Isometric grid (DigitalTwin) */
+.perspective-grid {
+  background-size: 40px 40px;
+  background-image:
+    linear-gradient(to right, rgba(33, 137, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(33, 137, 255, 0.04) 1px, transparent 1px);
+  transform: perspective(1000px) rotateX(60deg) translateY(-80px) scale(2.2);
+  transform-origin: top center;
+  pointer-events: none;
+}
+
+/* Node pulse (DigitalTwin) */
+@keyframes nodePulse {
+  0%   { box-shadow: 0 0 0 0 rgba(33, 137, 255, 0.4); }
+  70%  { box-shadow: 0 0 0 15px rgba(33, 137, 255, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(33, 137, 255, 0); }
+}
+.node-pulse { animation: nodePulse 2.5s infinite; }
+
+/* AI glow (AIAssistant) */
+@keyframes aiGlow {
+  0%   { box-shadow: 0 0 0 0 rgba(33, 137, 255, 0.15); }
+  100% { box-shadow: 0 0 0 12px rgba(33, 137, 255, 0); }
+}
+.ai-glow { animation: aiGlow 3s infinite alternate; }
