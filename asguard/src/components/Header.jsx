@@ -8,7 +8,8 @@ export default function Header({ title, subtitle, titleExtra }) {
   const { currentUser, logout } = useAuth()
   const router = useRouter()
 
-  const handleLogout = async () => {
+  const handleLogout = async (e) => {
+    e.stopPropagation()
     try {
       await logout()
       router.push('/login')
@@ -53,9 +54,12 @@ export default function Header({ title, subtitle, titleExtra }) {
         <div className="h-8 w-[1px] bg-gray-200 hidden sm:block" />
         
         {currentUser ? (
-          <div className="flex items-center gap-3">
+          <div 
+            className="flex items-center gap-3 cursor-pointer group"
+            onClick={() => router.push('/profile')}
+          >
             <div className="text-right hidden sm:block">
-              <p className="text-sm font-bold text-gray-900 leading-tight">
+              <p className="text-sm font-bold text-gray-900 group-hover:text-[#1428A0] transition-colors leading-tight">
                 {currentUser.name}
               </p>
               <p className="text-xs font-semibold text-gray-500">

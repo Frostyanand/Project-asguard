@@ -10,6 +10,7 @@ import {
   Settings,
   BarChart3,
   RefreshCw,
+  User,
 } from 'lucide-react'
 
 const navItems = [
@@ -19,6 +20,7 @@ const navItems = [
   { label: 'AI Assistant',      path: '/ai-assistant',     icon: Bot },
   { label: 'Automation Rules',  path: '/automation-rules', icon: RefreshCw },
   { label: 'Analytics',         path: '/analytics',        icon: BarChart3 },
+  { label: 'Profile',           path: '/profile',          icon: User },
   { label: 'Simulation',        path: '/simulation',       icon: FlaskConical },
   { label: 'Settings',          path: '#settings',         icon: Settings },
 ]

@@ -2,17 +2,14 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useAuth } from '../../context/AuthContext'
+import Link from 'next/link'
 import {
   Lightbulb,
   Zap,
   Thermometer,
   Activity,
-  Check,
   Eye,
   EyeOff,
-  AlertCircle,
-  Loader2,
 } from 'lucide-react'
 
 // ── Local Illustration Component ───────────────────────────────────────────────
@@ -87,55 +84,56 @@ function DigitalTwinIllustration() {
   )
 }
 
-// ── Login Page ─────────────────────────────────────────────────────────────────
-export default function Login() {
+// ── Create Account Page ────────────────────────────────────────────────────────
+export default function CreateAccount() {
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  
+  const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const [rememberMe, setRememberMe] = useState(false)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [authError, setAuthError] = useState(null)
-  
-  const router = useRouter()
-  const { loginWithGoogle, loginWithEmailPassword } = useAuth()
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [error, setError] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
 
-  const handleLogin = async (e) => {
+  const router = useRouter()
+
+  const handleCreateAccount = (e) => {
     e.preventDefault()
-    if (!email || !password) {
-      setAuthError("Please fill in both Email and Password.")
+    setError('')
+    
+    // Basic validations
+    if (!fullName || !email || !password || !confirmPassword) {
+      setError('All fields are required.')
+      return
+    }
+    
+    // Email regex validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(email)) {
+      setError('Please enter a valid email address.')
+      return
+    }
+    
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters.')
+      return
+    }
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.')
       return
     }
 
-    setIsSubmitting(true)
-    setAuthError(null)
-    try {
-      await loginWithEmailPassword(email, password)
-      router.push('/dashboard')
-    } catch (err) {
-      console.error("[ASGUARD Auth] Email login error:", err)
-      setAuthError(err.message || "Failed to sign in. Please check your credentials.")
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
-  const handleGoogleLogin = async () => {
-    setIsSubmitting(true)
-    setAuthError(null)
-    try {
-      await loginWithGoogle()
-      router.push('/dashboard')
-    } catch (err) {
-      console.error("[ASGUARD Auth] Google login error:", err)
-      setAuthError(err.message || "Google Sign-In failed. Please try again.")
-    } finally {
-      setIsSubmitting(false)
-    }
+    // Mock successful signup
+    setIsLoading(true)
+    setTimeout(() => {
+      setIsLoading(false)
+      router.push('/login')
+    }, 1000)
   }
 
   return (
     <div className="min-h-screen flex w-full bg-[#FFFFFF] text-gray-900 selection:bg-[#2189FF]/20">
-
       {/* LEFT: Branding & Illustration */}
       <div className="hidden lg:flex lg:w-[55%] flex-col relative px-20 py-16 justify-between">
         <div className="z-10 fade-in-up">
@@ -170,10 +168,9 @@ export default function Login() {
         </div>
       </div>
 
-      {/* RIGHT: Login Card */}
-      <div className="w-full lg:w-[45%] bg-[#F7F9FC] flex flex-col items-center justify-center relative p-6 sm:p-12 lg:p-24 border-l border-gray-100">
-        <div className="w-full max-w-[440px] fade-in-up delay-100">
-
+      {/* RIGHT: Create Account Card */}
+      <div className="w-full lg:w-[45%] bg-[#F7F9FC] flex flex-col items-center justify-center relative p-6 sm:p-12 lg:p-24 border-l border-gray-100 min-h-screen">
+        <div className="w-full max-w-[440px] fade-in-up delay-100 py-8 lg:py-0 z-10">
           {/* Mobile Header */}
           <div className="lg:hidden mb-10 text-center">
             <h1 className="text-3xl font-bold text-gray-900 mb-2 tracking-tight">ASGUARD</h1>
@@ -182,30 +179,39 @@ export default function Login() {
 
           {/* Card */}
           <div className="bg-white rounded-[24px] p-8 sm:p-12 shadow-[0_8px_40px_rgb(0,0,0,0.04),0_1px_3px_rgb(0,0,0,0.02)] ring-1 ring-gray-100">
-            <div className="mb-8">
-              <h2 className="text-3xl font-bold text-gray-900 mb-2.5 tracking-tight">Welcome Back</h2>
-              <p className="text-gray-500 text-base">Sign in to continue to ASGUARD.</p>
+            <div className="mb-10">
+              <h2 className="text-3xl font-bold text-gray-900 mb-2.5 tracking-tight">Create Account</h2>
+              <p className="text-gray-500 text-base">Sign up to get started with ASGUARD.</p>
             </div>
 
-            {/* Error Banner */}
-            {authError && (
-              <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-200 flex items-start gap-3 text-red-700 text-sm animate-shake">
-                <AlertCircle size={18} className="shrink-0 mt-0.5" />
-                <div className="flex-1">{authError}</div>
-              </div>
-            )}
+            <form className="space-y-5" onSubmit={handleCreateAccount}>
+              {error && (
+                <div className="bg-red-50 text-red-600 text-sm p-3 rounded-xl border border-red-100">
+                  {error}
+                </div>
+              )}
 
-            <form className="space-y-6" onSubmit={handleLogin}>
+              {/* Full Name */}
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-gray-700 block">Full Name</label>
+                <input
+                  type="text"
+                  placeholder="John Doe"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  className="w-full px-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-base text-gray-900 placeholder:text-gray-400 focus:bg-white focus:outline-none focus:border-[#2189FF] focus:ring-4 focus:ring-[#2189FF]/10 transition-all"
+                />
+              </div>
+
               {/* Email */}
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-gray-700 block">Email</label>
                 <input
                   type="email"
+                  placeholder="name@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@example.com"
                   className="w-full px-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-base text-gray-900 placeholder:text-gray-400 focus:bg-white focus:outline-none focus:border-[#2189FF] focus:ring-4 focus:ring-[#2189FF]/10 transition-all"
-                  required
                 />
               </div>
 
@@ -215,11 +221,10 @@ export default function Login() {
                 <div className="relative">
                   <input
                     type={showPassword ? 'text' : 'password'}
+                    placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
                     className="w-full px-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-base text-gray-900 placeholder:text-gray-400 focus:bg-white focus:outline-none focus:border-[#2189FF] focus:ring-4 focus:ring-[#2189FF]/10 transition-all pr-12"
-                    required
                   />
                   <button
                     type="button"
@@ -231,44 +236,46 @@ export default function Login() {
                 </div>
               </div>
 
-              {/* Options */}
-              <div className="flex items-center justify-between pt-2 pb-2">
-                <label className="flex items-center gap-2.5 cursor-pointer group">
-                  <div
-                    className={`w-[18px] h-[18px] rounded-[6px] border flex items-center justify-center transition-all duration-200
-                      ${rememberMe ? 'bg-[#1428A0] border-[#1428A0]' : 'border-gray-300 bg-white group-hover:border-[#1428A0]'}`}
-                    onClick={() => setRememberMe(!rememberMe)}
+              {/* Confirm Password */}
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-gray-700 block">Confirm Password</label>
+                <div className="relative">
+                  <input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    placeholder="••••••••"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full px-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-base text-gray-900 placeholder:text-gray-400 focus:bg-white focus:outline-none focus:border-[#2189FF] focus:ring-4 focus:ring-[#2189FF]/10 transition-all pr-12"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors p-1"
                   >
-                    {rememberMe && <Check size={14} strokeWidth={3} className="text-white" />}
-                  </div>
-                  <span className="text-sm text-gray-600 font-medium select-none">Remember me</span>
-                </label>
-                <a href="#" className="text-sm font-semibold text-[#1428A0] hover:text-[#2189FF] hover:underline underline-offset-4 transition-all">
-                  Forgot Password?
-                </a>
+                    {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                  </button>
+                </div>
               </div>
 
               {/* Buttons */}
-              <div className="space-y-3.5 pt-2">
+              <div className="space-y-3.5 pt-4">
                 <button
                   type="submit"
-                  disabled={isSubmitting}
-                  className="w-full bg-[#1428A0] hover:bg-[#102080] text-white font-semibold text-base py-3.5 rounded-xl transition-all shadow-[0_4px_14px_rgba(20,40,160,0.25)] hover:shadow-[0_6px_20px_rgba(20,40,160,0.3)] active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-70"
+                  disabled={isLoading}
+                  className="w-full bg-[#1428A0] hover:bg-[#102080] text-white font-semibold text-base py-3.5 rounded-xl transition-all shadow-[0_4px_14px_rgba(20,40,160,0.25)] hover:shadow-[0_6px_20px_rgba(20,40,160,0.3)] active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
-                  {isSubmitting ? (
+                  {isLoading ? (
                     <>
-                      <Loader2 size={18} className="animate-spin" />
-                      Signing in...
+                      <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                      Creating Account...
                     </>
                   ) : (
-                    "Login"
+                    'Create Account'
                   )}
                 </button>
                 <button
                   type="button"
-                  onClick={handleGoogleLogin}
-                  disabled={isSubmitting}
-                  className="w-full bg-white ring-1 ring-inset ring-gray-200 hover:bg-gray-50 hover:ring-gray-300 text-gray-700 font-semibold text-base py-3.5 rounded-xl transition-all flex items-center justify-center gap-3 active:scale-[0.98] disabled:opacity-70"
+                  className="w-full bg-white ring-1 ring-inset ring-gray-200 hover:bg-gray-50 hover:ring-gray-300 text-gray-700 font-semibold text-base py-3.5 rounded-xl transition-all flex items-center justify-center gap-3 active:scale-[0.98]"
                 >
                   <svg className="w-[18px] h-[18px] shrink-0" viewBox="0 0 24 24">
                     <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
@@ -281,13 +288,13 @@ export default function Login() {
               </div>
             </form>
 
-            {/* Sign Up */}
+            {/* Sign In Link */}
             <div className="mt-8 text-center">
               <p className="text-sm text-gray-600 font-medium">
-                Don&apos;t have an account?{' '}
-                <a href="/create-account" className="font-semibold text-[#1428A0] hover:text-[#2189FF] hover:underline underline-offset-4 transition-all">
-                  Create Account
-                </a>
+                Already have an account?{' '}
+                <Link href="/login" className="font-semibold text-[#1428A0] hover:text-[#2189FF] hover:underline underline-offset-4 transition-all">
+                  Sign In
+                </Link>
               </p>
             </div>
           </div>
