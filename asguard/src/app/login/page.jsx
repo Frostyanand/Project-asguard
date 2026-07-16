@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../../context/AuthContext'
+import { getFriendlyErrorMessage } from '../../firebase/authService'
 import {
   Lightbulb,
   Zap,
@@ -108,12 +109,14 @@ export default function Login() {
 
     setIsSubmitting(true)
     setAuthError(null)
+    console.log("[Login Runtime Audit] Login Started for:", email);
     try {
       await loginWithEmailPassword(email, password)
+      console.log("[Login Runtime Audit] Login Successful. Redirecting to dashboard...");
       router.push('/dashboard')
     } catch (err) {
-      console.error("[ASGUARD Auth] Email login error:", err)
-      setAuthError(err.message || "Failed to sign in. Please check your credentials.")
+      console.error("[Login Runtime Audit Failure] Exact Code:", err?.code, "Message:", err?.message, "Stack:", err?.stack);
+      setAuthError(getFriendlyErrorMessage(err))
     } finally {
       setIsSubmitting(false)
     }
@@ -122,12 +125,14 @@ export default function Login() {
   const handleGoogleLogin = async () => {
     setIsSubmitting(true)
     setAuthError(null)
+    console.log("[Login Runtime Audit] Google Login Started...");
     try {
       await loginWithGoogle()
+      console.log("[Login Runtime Audit] Google Login Successful. Redirecting to dashboard...");
       router.push('/dashboard')
     } catch (err) {
-      console.error("[ASGUARD Auth] Google login error:", err)
-      setAuthError(err.message || "Google Sign-In failed. Please try again.")
+      console.error("[Login Runtime Audit Failure] Exact Code:", err?.code, "Message:", err?.message, "Stack:", err?.stack);
+      setAuthError(getFriendlyErrorMessage(err))
     } finally {
       setIsSubmitting(false)
     }

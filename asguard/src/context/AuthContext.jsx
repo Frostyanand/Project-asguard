@@ -1,7 +1,7 @@
 'use client'
 
 import React, { createContext, useContext, useState, useEffect, useRef } from "react";
-import { auth, isFirebaseConfigured } from "../lib/firebase";
+import { auth, isFirebaseConfigured } from "../firebase/client";
 import { onAuthStateChanged } from "firebase/auth";
 import {
   signInWithGoogle,
@@ -10,7 +10,7 @@ import {
   signOutUser,
   createUserProfile,
   updateUserProfile,
-} from "../lib/authService";
+} from "../firebase/authService";
 
 const AuthContext = createContext();
 
@@ -41,6 +41,7 @@ export const AuthProvider = ({ children }) => {
       clearTimeout(timeout);
 
       if (firebaseUser) {
+        console.log("[Registration Audit Context] onAuthStateChanged active user detected UID:", firebaseUser.uid);
         const basicProfile = {
           uid: firebaseUser.uid,
           name: firebaseUser.displayName || firebaseUser.email?.split("@")[0] || "SmartThings User",
@@ -58,9 +59,10 @@ export const AuthProvider = ({ children }) => {
             setCurrentUser(profile);
           }
         } catch (err) {
-          console.warn("Background Firestore profile load warning:", err.message);
+          console.warn("[Registration Audit Context] Background profile load warning:", err.message);
         }
       } else {
+        console.log("[Registration Audit Context] onAuthStateChanged: No active user session.");
         setCurrentUser(null);
         setLoading(false);
       }
@@ -75,6 +77,7 @@ export const AuthProvider = ({ children }) => {
   const loginWithGoogle = async () => {
     setLoading(true);
     try {
+      console.log("[Registration Audit Context] Initiating Google login...");
       const user = await signInWithGoogle();
       const basicProfile = {
         uid: user.uid,
@@ -85,7 +88,6 @@ export const AuthProvider = ({ children }) => {
         houseLocation: "Chennai, Tamil Nadu, India",
       };
       setCurrentUser(basicProfile);
-      setLoading(false);
 
       try {
         const profile = await createUserProfile(user);
@@ -95,14 +97,17 @@ export const AuthProvider = ({ children }) => {
         return basicProfile;
       }
     } catch (error) {
-      setLoading(false);
+      console.error("[Registration Audit Context] Google Login Exception Code:", error.code, "Message:", error.message);
       throw error;
+    } finally {
+      setLoading(false);
     }
   };
 
   const loginWithEmailPassword = async (email, password) => {
     setLoading(true);
     try {
+      console.log("[Registration Audit Context] Initiating Email/Password login...");
       const user = await signInWithEmail(email, password);
       const basicProfile = {
         uid: user.uid,
@@ -113,25 +118,32 @@ export const AuthProvider = ({ children }) => {
         houseLocation: "Chennai, Tamil Nadu, India",
       };
       setCurrentUser(basicProfile);
-      setLoading(false);
       return basicProfile;
     } catch (error) {
-      setLoading(false);
+      console.error("[Registration Audit Context] Email Login Exception Code:", error.code, "Message:", error.message);
       throw error;
+    } finally {
+      setLoading(false);
     }
   };
 
   const registerWithEmailPassword = async (email, password, displayName) => {
     setLoading(true);
     try {
+      console.log("[Registration Audit Context] Starting registerWithEmailPassword for:", email);
       const user = await signUpWithEmail(email, password, displayName);
-      const profile = await createUserProfile(user);
+      console.log("[Registration Audit Context] User created in Auth. Returned UID:", user.uid);
+      
+      const profile = await createUserProfile(user, displayName);
+      console.log("[Registration Audit Context] User Profile created for UID:", user.uid);
       setCurrentUser(profile);
-      setLoading(false);
       return profile;
     } catch (error) {
-      setLoading(false);
+      console.error("[Registration Audit Context] Exception in registerWithEmailPassword - Code:", error.code, "Message:", error.message);
       throw error;
+    } finally {
+      console.log("[Registration Audit Context] Clearing AuthContext loading state in finally block.");
+      setLoading(false);
     }
   };
 
@@ -141,6 +153,7 @@ export const AuthProvider = ({ children }) => {
       await signOutUser();
       setCurrentUser(null);
     } catch (error) {
+      console.error("[Registration Audit Context] Logout Exception Code:", error.code, "Message:", error.message);
       throw error;
     } finally {
       setLoading(false);
@@ -151,9 +164,10 @@ export const AuthProvider = ({ children }) => {
     if (!currentUser) throw new Error("No active user session found");
     try {
       const updated = await updateUserProfile(currentUser.uid, profileData);
-      setCurrentUser(updated);
+      setCurrentUser((prev) => ({ ...prev, ...updated }));
       return updated;
     } catch (error) {
+      console.error("[Registration Audit Context] Update Profile Exception Code:", error.code, "Message:", error.message);
       throw error;
     }
   };

@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { useAuth } from '../../context/AuthContext'
 import {
   Lightbulb,
   Zap,
@@ -10,6 +11,8 @@ import {
   Activity,
   Eye,
   EyeOff,
+  AlertCircle,
+  Loader2,
 } from 'lucide-react'
 
 // ── Local Illustration Component ───────────────────────────────────────────────
@@ -97,8 +100,9 @@ export default function CreateAccount() {
   const [isLoading, setIsLoading] = useState(false)
 
   const router = useRouter()
+  const { registerWithEmailPassword, loginWithGoogle } = useAuth()
 
-  const handleCreateAccount = (e) => {
+  const handleCreateAccount = async (e) => {
     e.preventDefault()
     setError('')
     
@@ -108,7 +112,6 @@ export default function CreateAccount() {
       return
     }
     
-    // Email regex validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     if (!emailRegex.test(email)) {
       setError('Please enter a valid email address.')
@@ -124,12 +127,37 @@ export default function CreateAccount() {
       return
     }
 
-    // Mock successful signup
     setIsLoading(true)
-    setTimeout(() => {
+    try {
+      console.log("[Registration Audit UI] Registration started");
+      const userProfile = await registerWithEmailPassword(email, password, fullName)
+      console.log("[Registration Audit UI] Registration complete. Profile UID:", userProfile?.uid);
+      console.log("[Registration Audit UI] Redirecting to dashboard...");
+      router.push('/dashboard')
+    } catch (err) {
+      console.error("[Registration Audit UI] Registration Exception Code:", err.code, "Message:", err.message);
+      setError(err.message || 'Failed to create account. Please try again.')
+    } finally {
+      console.log("[Registration Audit UI] Clearing form isLoading state.");
       setIsLoading(false)
-      router.push('/login')
-    }, 1000)
+    }
+  }
+
+  const handleGoogleSignIn = async () => {
+    setIsLoading(true)
+    setError('')
+    try {
+      console.log("[Registration Audit UI] Google Sign In started...");
+      await loginWithGoogle()
+      console.log("[Registration Audit UI] Google Sign In complete. Redirecting to dashboard...");
+      router.push('/dashboard')
+    } catch (err) {
+      console.error("[Registration Audit UI] Google Sign-In Exception Code:", err.code, "Message:", err.message);
+      setError(err.message || 'Google Sign-In failed. Please try again.')
+    } finally {
+      console.log("[Registration Audit UI] Clearing form isLoading state.");
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -179,15 +207,16 @@ export default function CreateAccount() {
 
           {/* Card */}
           <div className="bg-white rounded-[24px] p-8 sm:p-12 shadow-[0_8px_40px_rgb(0,0,0,0.04),0_1px_3px_rgb(0,0,0,0.02)] ring-1 ring-gray-100">
-            <div className="mb-10">
+            <div className="mb-8">
               <h2 className="text-3xl font-bold text-gray-900 mb-2.5 tracking-tight">Create Account</h2>
               <p className="text-gray-500 text-base">Sign up to get started with ASGUARD.</p>
             </div>
 
             <form className="space-y-5" onSubmit={handleCreateAccount}>
               {error && (
-                <div className="bg-red-50 text-red-600 text-sm p-3 rounded-xl border border-red-100">
-                  {error}
+                <div className="p-4 rounded-xl bg-red-50 border border-red-200 flex items-start gap-3 text-red-700 text-sm animate-shake">
+                  <AlertCircle size={18} className="shrink-0 mt-0.5" />
+                  <div className="flex-1">{error}</div>
                 </div>
               )}
 
@@ -200,6 +229,7 @@ export default function CreateAccount() {
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   className="w-full px-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-base text-gray-900 placeholder:text-gray-400 focus:bg-white focus:outline-none focus:border-[#2189FF] focus:ring-4 focus:ring-[#2189FF]/10 transition-all"
+                  required
                 />
               </div>
 
@@ -212,6 +242,7 @@ export default function CreateAccount() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full px-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-base text-gray-900 placeholder:text-gray-400 focus:bg-white focus:outline-none focus:border-[#2189FF] focus:ring-4 focus:ring-[#2189FF]/10 transition-all"
+                  required
                 />
               </div>
 
@@ -225,6 +256,7 @@ export default function CreateAccount() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full px-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-base text-gray-900 placeholder:text-gray-400 focus:bg-white focus:outline-none focus:border-[#2189FF] focus:ring-4 focus:ring-[#2189FF]/10 transition-all pr-12"
+                    required
                   />
                   <button
                     type="button"
@@ -246,6 +278,7 @@ export default function CreateAccount() {
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     className="w-full px-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-base text-gray-900 placeholder:text-gray-400 focus:bg-white focus:outline-none focus:border-[#2189FF] focus:ring-4 focus:ring-[#2189FF]/10 transition-all pr-12"
+                    required
                   />
                   <button
                     type="button"
@@ -262,11 +295,11 @@ export default function CreateAccount() {
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full bg-[#1428A0] hover:bg-[#102080] text-white font-semibold text-base py-3.5 rounded-xl transition-all shadow-[0_4px_14px_rgba(20,40,160,0.25)] hover:shadow-[0_6px_20px_rgba(20,40,160,0.3)] active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="w-full bg-[#1428A0] hover:bg-[#102080] text-white font-semibold text-base py-3.5 rounded-xl transition-all shadow-[0_4px_14px_rgba(20,40,160,0.25)] hover:shadow-[0_6px_20px_rgba(20,40,160,0.3)] active:scale-[0.98] disabled:opacity-70 flex items-center justify-center gap-2"
                 >
                   {isLoading ? (
                     <>
-                      <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                      <Loader2 size={18} className="animate-spin" />
                       Creating Account...
                     </>
                   ) : (
@@ -275,7 +308,9 @@ export default function CreateAccount() {
                 </button>
                 <button
                   type="button"
-                  className="w-full bg-white ring-1 ring-inset ring-gray-200 hover:bg-gray-50 hover:ring-gray-300 text-gray-700 font-semibold text-base py-3.5 rounded-xl transition-all flex items-center justify-center gap-3 active:scale-[0.98]"
+                  onClick={handleGoogleSignIn}
+                  disabled={isLoading}
+                  className="w-full bg-white ring-1 ring-inset ring-gray-200 hover:bg-gray-50 hover:ring-gray-300 text-gray-700 font-semibold text-base py-3.5 rounded-xl transition-all flex items-center justify-center gap-3 active:scale-[0.98] disabled:opacity-70"
                 >
                   <svg className="w-[18px] h-[18px] shrink-0" viewBox="0 0 24 24">
                     <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />

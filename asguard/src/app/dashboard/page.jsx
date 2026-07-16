@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../../context/AuthContext'
-import { db } from '../../lib/firebase'
-import { collection, query, limit, getDocs, orderBy } from 'firebase/firestore'
+import { db } from '../../firebase/client'
+import { fetchEnergyLogs } from '../../firebase/firestoreService'
 import {
   Thermometer,
   Zap,
@@ -70,18 +70,9 @@ export default function Dashboard() {
 
   useEffect(() => {
     async function fetchFirestoreMetrics() {
-      if (!db) {
-        setTelemetry((prev) => ({ ...prev, loading: false }))
-        return
-      }
-
       try {
-        const logsRef = collection(db, "energy_logs")
-        const q = query(logsRef, limit(5))
-        const snapshot = await getDocs(q)
-
-        if (!snapshot.empty) {
-          const logs = snapshot.docs.map((doc) => doc.data())
+        const logs = await fetchEnergyLogs(5)
+        if (logs.length > 0) {
           setTelemetry((prev) => ({
             ...prev,
             recentLogs: logs,
@@ -91,7 +82,7 @@ export default function Dashboard() {
           setTelemetry((prev) => ({ ...prev, loading: false }))
         }
       } catch (err) {
-        console.warn("Firestore query fallback to synthetic telemetry:", err.message)
+        console.warn("Firestore query fallback:", err.message)
         setTelemetry((prev) => ({ ...prev, loading: false }))
       }
     }
