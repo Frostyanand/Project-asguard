@@ -2,51 +2,57 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '../../context/AuthContext'
 import {
-  Sofa,
-  Bed,
-  Utensils,
-  Bath,
-  Wind,
-  Tv,
-  Lightbulb,
-  Blinds,
-  Fan,
-  RotateCcw,
-  ZoomIn,
-  ZoomOut,
-  Maximize,
-  LocateFixed,
-  Sparkles,
-  Activity,
-  FlaskConical,
-  CheckCircle2,
-  Home,
-  ChevronLeft,
-  ChevronRight,
-  Eye,
-  EyeOff,
-  Move3D,
+  fetchUserProfile,
+  fetchLatestDeviceStates,
+  getUniqueRooms,
+  getRoomIcon,
+  getApplianceIcon,
+} from '../../firebase/firestoreService'
+import {
+  Wind, Tv, Lightbulb, Blinds, Fan, Refrigerator, Flame,
+  Sofa, Bed, Utensils, Bath, Home,
+  RotateCcw, LocateFixed, Sparkles, Activity,
+  ChevronLeft, ChevronRight, Eye, EyeOff, Move3D, Loader2, AlertTriangle,
 } from 'lucide-react'
 import Header from '../../components/Header'
 import AppLayout from '../../components/AppLayout'
 import { useProgress } from '@react-three/drei'
-
-import dynamic from "next/dynamic";
+import dynamic from "next/dynamic"
 
 const Scene = dynamic(
   () => import("./components/Scene"),
   { ssr: false }
-);
+)
+
+// ── Icon maps ──────────────────────────────────────────────────────────────────
+
+const ROOM_ICON_MAP = {
+  Sofa, Bed, Utensils, Bath, Home,
+}
+
+const APPLIANCE_ICON_MAP = {
+  Wind, Tv, Lightbulb, Blinds, Fan, Refrigerator, Flame, Zap: Activity,
+}
+
+function resolveRoomIcon(roomType) {
+  const name = getRoomIcon(roomType)
+  return ROOM_ICON_MAP[name] || Home
+}
+
+function resolveApplianceIcon(applianceType) {
+  const name = getApplianceIcon(applianceType)
+  return APPLIANCE_ICON_MAP[name] || Activity
+}
 
 // ── Page-local Sub-components ─────────────────────────────────────────────────
 
 function TwinLoader() {
-  const { progress, active } = useProgress()
+  const { progress } = useProgress()
   const [show, setShow] = useState(true)
 
   useEffect(() => {
-    // If progress hits 100, start fade out
     if (progress === 100) {
       const timeout = setTimeout(() => setShow(false), 800)
       return () => clearTimeout(timeout)
@@ -119,8 +125,8 @@ function DeviceCard({ icon: Icon, name, status, power, consumption }) {
           <div>
             <h4 className="text-[15px] font-bold text-gray-900 leading-tight mb-1">{name}</h4>
             <div className="flex items-center gap-1.5">
-              <div className={`w-2 h-2 rounded-full ${status === 'Online' ? 'bg-green-500' : 'bg-gray-300'}`} />
-              <span className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">{status}</span>
+              <div className={`w-2 h-2 rounded-full ${status === 'ON' ? 'bg-green-500' : 'bg-gray-300'}`} />
+              <span className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">{status === 'ON' ? 'Online' : 'Offline'}</span>
             </div>
           </div>
         </div>
@@ -135,7 +141,7 @@ function DeviceCard({ icon: Icon, name, status, power, consumption }) {
           />
         </div>
       </div>
-      {consumption && (
+      {consumption != null && (
         <div className="flex items-center justify-between pt-4 border-t border-gray-100/80 mt-1">
           <span className="text-[11px] font-bold uppercase tracking-widest text-gray-400">Today&apos;s Consumption</span>
           <span className="text-sm font-bold text-[#1428A0] bg-blue-50/50 px-2.5 py-1 rounded-md">{consumption}</span>
@@ -151,109 +157,163 @@ export default function DigitalTwin() {
   const [ceilingVisible, setCeilingVisible] = useState(false)
   const [focusMode, setFocusMode] = useState(true)
   const [roomCenters, setRoomCenters] = useState({})
-  const [leftPanelOpen, setLeftPanelOpen] = useState(false)
   const [rightPanelOpen, setRightPanelOpen] = useState(false)
   const [viewMode, setViewMode] = useState('isometric')
 
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [roomList, setRoomList] = useState([])
+  const [devicesData, setDevicesData] = useState({ all: [] })
+  const [roomNamesMap, setRoomNamesMap] = useState({ all: 'Entire Apartment' })
+
   const router = useRouter()
+  const { currentUser, loading: authLoading } = useAuth()
 
   // Auto-traverse: when a specific room is selected, go interior. When 'all', go aerial.
   useEffect(() => {
     if (activeRoom === 'all') {
-      setViewMode('isometric');
+      setViewMode('isometric')
     } else {
-      setViewMode('interior');
+      setViewMode('interior')
     }
-  }, [activeRoom]);
+  }, [activeRoom])
 
-  const roomNamesMap = {
-    all: 'Entire Apartment',
-    A: 'Bedroom 1 (Master)',
-    B: 'Bedroom 2 (Guest)',
-    C: 'Kitchen Space',
-    D: 'Bathroom & Corridor',
-    E: 'Living Room Space',
-  }
+  useEffect(() => {
+    let isMounted = true
 
-  const roomList = [
-    { id: 'all', label: 'Entire Apartment', letter: 'ALL', icon: Home },
-    { id: 'A', label: 'Bedroom 1', letter: 'A', icon: Bed },
-    { id: 'B', label: 'Bedroom 2', letter: 'B', icon: Bed },
-    { id: 'C', label: 'Kitchen', letter: 'C', icon: Utensils },
-    { id: 'D', label: 'Bathroom', letter: 'D', icon: Bath },
-    { id: 'E', label: 'Living Room', letter: 'E', icon: Sofa },
-  ]
+    async function fetchTwinData() {
+      if (!currentUser?.uid) {
+        if (isMounted) setLoading(false)
+        return
+      }
+      setLoading(true)
+      setError(null)
 
-  const devicesData = {
-    all: [
-      { icon: Wind, name: "Samsung WindFree AC", status: "Online", power: "ON", consumption: "1.2 kWh" },
-      { icon: Tv, name: "Samsung Frame TV", status: "Online", power: "ON", consumption: "0.8 kWh" },
-      { icon: Lightbulb, name: "Smart Lighting", status: "Online", power: "ON", consumption: "0.3 kWh" },
-      { icon: Blinds, name: "Smart Curtains", status: "Online", power: "OFF" },
-      { icon: Fan, name: "Ceiling Fan", status: "Offline", power: "OFF" },
-    ],
-    A: [
-      { icon: Wind, name: "WindFree AC (Bedroom 1)", status: "Online", power: "ON", consumption: "0.6 kWh" },
-      { icon: Lightbulb, name: "Bedside Reading Lamps", status: "Online", power: "ON", consumption: "0.1 kWh" },
-      { icon: Blinds, name: "Blackout Blinds", status: "Online", power: "OFF" },
-    ],
-    B: [
-      { icon: Wind, name: "AC (Bedroom 2)", status: "Offline", power: "OFF" },
-      { icon: Lightbulb, name: "Bedroom 2 Spotlight", status: "Online", power: "ON", consumption: "0.15 kWh" },
-    ],
-    C: [
-      { icon: Lightbulb, name: "Kitchen Task Lighting", status: "Online", power: "ON", consumption: "0.2 kWh" },
-      { icon: Blinds, name: "Kitchen Blind", status: "Online", power: "OFF" },
-    ],
-    D: [
-      { icon: Lightbulb, name: "Vanity Mirror Glow", status: "Online", power: "ON", consumption: "0.05 kWh" },
-      { icon: Fan, name: "Exhaust Ventilator", status: "Online", power: "ON", consumption: "0.08 kWh" },
-    ],
-    E: [
-      { icon: Wind, name: "Samsung WindFree AC", status: "Online", power: "ON", consumption: "1.2 kWh" },
-      { icon: Tv, name: "Samsung Frame TV", status: "Online", power: "ON", consumption: "0.8 kWh" },
-      { icon: Lightbulb, name: "Ambient Backlighting", status: "Online", power: "ON", consumption: "0.30 kWh" },
-      { icon: Blinds, name: "Balcony Curtains", status: "Online", power: "OFF" },
-    ]
-  }
+      try {
+        const userProfile = await fetchUserProfile(currentUser.uid)
+        const houseId = (userProfile?.house_id || userProfile?.houseId || 'HOUSE001')
 
-  const activeDevices = devicesData[activeRoom] || devicesData.all
+        // Fetch latest state per device — minimal query
+        const latestLogs = await fetchLatestDeviceStates(houseId)
+
+        if (!isMounted) return
+
+        if (latestLogs.length === 0) {
+          setRoomList([{ id: 'all', label: 'Entire Apartment', letter: 'ALL', icon: Home }])
+          setDevicesData({ all: [] })
+          setRoomNamesMap({ all: 'Entire Apartment' })
+          setLoading(false)
+          return
+        }
+
+        // Build unique rooms sorted alphabetically — map to letters A, B, C...
+        const uniqueRooms = getUniqueRooms(latestLogs)
+        const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
+
+        const namesMap = { all: 'Entire Apartment' }
+        const builtRoomList = [
+          { id: 'all', label: 'Entire Apartment', letter: 'ALL', icon: Home }
+        ]
+
+        uniqueRooms.forEach((room, index) => {
+          const letter = LETTERS[index] || String.fromCharCode(65 + index)
+          namesMap[letter] = room.roomName
+          builtRoomList.push({
+            id: letter,
+            label: room.roomName,
+            letter,
+            icon: resolveRoomIcon(room.roomType),
+          })
+        })
+
+        // Build devicesData map: 'all' + per-letter room
+        const builtDevicesData = { all: [] }
+        for (const letter of Object.keys(namesMap)) {
+          if (letter !== 'all') builtDevicesData[letter] = []
+        }
+
+        for (const log of latestLogs) {
+          const DevIcon = resolveApplianceIcon(log.appliance_type)
+          const kwh = Number(log.energy_kwh) || 0
+          const deviceEntry = {
+            icon: DevIcon,
+            name: log.appliance_name || log.appliance_id || 'Unknown Device',
+            status: log.status === 'ON' ? 'ON' : 'OFF',
+            power: log.status === 'ON' ? 'ON' : 'OFF',
+            consumption: kwh > 0 ? `${kwh.toFixed(2)} kWh` : null,
+          }
+
+          builtDevicesData.all.push(deviceEntry)
+
+          // Find the letter for this room
+          const roomEntry = uniqueRooms.findIndex((r) => r.roomName === log.room_name)
+          if (roomEntry !== -1) {
+            const letter = LETTERS[roomEntry] || String.fromCharCode(65 + roomEntry)
+            if (builtDevicesData[letter]) {
+              builtDevicesData[letter].push(deviceEntry)
+            }
+          }
+        }
+
+        setRoomNamesMap(namesMap)
+        setRoomList(builtRoomList)
+        setDevicesData(builtDevicesData)
+        setLoading(false)
+      } catch (err) {
+        console.error('Digital Twin fetch error:', err)
+        if (isMounted) {
+          setError(`Failed to load Digital Twin data: ${err.message}`)
+          setLoading(false)
+        }
+      }
+    }
+
+    fetchTwinData()
+    return () => { isMounted = false }
+  }, [currentUser?.uid])
+
+  const activeDevices = devicesData[activeRoom] || devicesData.all || []
 
   return (
     <AppLayout>
-      {/* Full-screen immersive container — no header to maximize viewport */}
+      {/* Full-screen immersive container */}
       <div className="flex-1 relative w-full h-full overflow-hidden select-none">
 
         {/* 3D Viewer fills entire viewport */}
         <div className="absolute inset-0 bg-gradient-to-b from-[#0a0e1a] to-[#111827]">
           <TwinLoader />
-          <Scene
-            activeRoom={activeRoom === 'all' ? null : activeRoom}
-            setActiveRoom={setActiveRoom}
-            ceilingVisible={ceilingVisible}
-            focusMode={focusMode}
-            roomCenters={roomCenters}
-            setRoomCenters={setRoomCenters}
-            viewMode={viewMode}
-          />
+          {!loading && (
+            <Scene
+              activeRoom={activeRoom === 'all' ? null : activeRoom}
+              setActiveRoom={setActiveRoom}
+              ceilingVisible={ceilingVisible}
+              focusMode={focusMode}
+              roomCenters={roomCenters}
+              setRoomCenters={setRoomCenters}
+              viewMode={viewMode}
+            />
+          )}
         </div>
 
-        {/* ── TOP BAR: Minimal info + controls ────────────────────────── */}
+        {/* ── TOP BAR ────────────────────────── */}
         <div className="absolute top-0 left-0 right-0 z-20 pointer-events-none">
           <div className="flex items-center justify-between px-6 py-4">
-            {/* Left: Title + status */}
             <div className="flex items-center gap-4 pointer-events-auto">
               <div className="bg-black/40 backdrop-blur-md px-5 py-3 rounded-2xl border border-white/10 flex items-center gap-3">
                 <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
                 <span className="text-white/90 font-bold text-sm tracking-tight">AEGIS Digital Twin</span>
                 <span className="text-white/40 text-xs">•</span>
-                <span className="text-white/50 text-xs font-medium">{roomNamesMap[activeRoom]}</span>
+                <span className="text-white/50 text-xs font-medium">{roomNamesMap[activeRoom] || 'Entire Apartment'}</span>
               </div>
+              {error && (
+                <div className="bg-amber-500/80 backdrop-blur-md px-4 py-2 rounded-xl border border-amber-400/30 flex items-center gap-2 text-white text-xs font-bold">
+                  <AlertTriangle size={14} />
+                  {error}
+                </div>
+              )}
             </div>
 
-            {/* Right: Quick action buttons */}
             <div className="flex items-center gap-2 pointer-events-auto">
-              {/* Ceiling toggle */}
               <button
                 onClick={() => setCeilingVisible(!ceilingVisible)}
                 className={`p-2.5 rounded-xl backdrop-blur-md border transition-all ${ceilingVisible ? 'bg-[#1428A0]/80 border-[#1428A0]/50 text-white' : 'bg-black/40 border-white/10 text-white/60 hover:text-white hover:bg-black/60'}`}
@@ -261,7 +321,6 @@ export default function DigitalTwin() {
               >
                 {ceilingVisible ? <Eye size={18} /> : <EyeOff size={18} />}
               </button>
-              {/* Focus toggle */}
               <button
                 onClick={() => setFocusMode(!focusMode)}
                 className={`p-2.5 rounded-xl backdrop-blur-md border transition-all ${focusMode ? 'bg-[#1428A0]/80 border-[#1428A0]/50 text-white' : 'bg-black/40 border-white/10 text-white/60 hover:text-white hover:bg-black/60'}`}
@@ -269,12 +328,11 @@ export default function DigitalTwin() {
               >
                 <LocateFixed size={18} />
               </button>
-              {/* Reset */}
               <button
                 onClick={() => {
-                  setActiveRoom('all');
-                  setCeilingVisible(false);
-                  setFocusMode(true);
+                  setActiveRoom('all')
+                  setCeilingVisible(false)
+                  setFocusMode(true)
                 }}
                 className="p-2.5 rounded-xl bg-black/40 backdrop-blur-md border border-white/10 text-white/60 hover:text-white hover:bg-black/60 transition-all"
                 title="Reset View"
@@ -285,40 +343,46 @@ export default function DigitalTwin() {
           </div>
         </div>
 
-        {/* ── LEFT EDGE: Room selector pills ──────────────────────────── */}
+        {/* ── LEFT EDGE: Room selector ──────────────────────────── */}
         <div className="absolute left-5 top-1/2 -translate-y-1/2 z-20 pointer-events-auto">
-          <div className="flex flex-col gap-2">
-            {roomList.map((room) => {
-              const isActive = activeRoom === room.id;
-              const Icon = room.icon;
-              return (
-                <button
-                  key={room.id}
-                  onClick={() => setActiveRoom(room.id)}
-                  className={`group relative flex items-center gap-3 transition-all duration-300 rounded-2xl border backdrop-blur-md
-                    ${isActive
-                      ? 'bg-[#1428A0]/90 border-[#1428A0]/60 text-white px-5 py-3 shadow-[0_0_20px_rgba(20,40,160,0.4)]'
-                      : 'bg-black/40 border-white/10 text-white/70 hover:text-white hover:bg-black/60 px-3.5 py-3 hover:px-5'
-                    }`}
-                  title={room.label}
-                >
-                  <span className={`font-black text-xs shrink-0 ${isActive ? 'text-white' : 'text-white/80'}`}>
-                    {room.letter}
-                  </span>
-                  <span className={`text-[13px] font-bold tracking-tight whitespace-nowrap overflow-hidden transition-all duration-300
-                    ${isActive ? 'max-w-[150px] opacity-100' : 'max-w-0 opacity-0 group-hover:max-w-[150px] group-hover:opacity-100'}`}>
-                    {room.label}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+          {loading ? (
+            <div className="bg-black/40 backdrop-blur-md px-4 py-3 rounded-2xl border border-white/10 flex items-center gap-2 text-white/60">
+              <Loader2 size={16} className="animate-spin" />
+              <span className="text-xs font-bold">Loading...</span>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {roomList.map((room) => {
+                const isActive = activeRoom === room.id
+                const Icon = room.icon
+                return (
+                  <button
+                    key={room.id}
+                    onClick={() => setActiveRoom(room.id)}
+                    className={`group relative flex items-center gap-3 transition-all duration-300 rounded-2xl border backdrop-blur-md
+                      ${isActive
+                        ? 'bg-[#1428A0]/90 border-[#1428A0]/60 text-white px-5 py-3 shadow-[0_0_20px_rgba(20,40,160,0.4)]'
+                        : 'bg-black/40 border-white/10 text-white/70 hover:text-white hover:bg-black/60 px-3.5 py-3 hover:px-5'
+                      }`}
+                    title={room.label}
+                  >
+                    <span className={`font-black text-xs shrink-0 ${isActive ? 'text-white' : 'text-white/80'}`}>
+                      {room.letter}
+                    </span>
+                    <span className={`text-[13px] font-bold tracking-tight whitespace-nowrap overflow-hidden transition-all duration-300
+                      ${isActive ? 'max-w-[150px] opacity-100' : 'max-w-0 opacity-0 group-hover:max-w-[150px] group-hover:opacity-100'}`}>
+                      {room.label}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
 
         {/* ── BOTTOM CENTER: Perspective toggle + info ─────────────────── */}
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 pointer-events-auto">
           <div className="bg-black/50 backdrop-blur-xl px-5 py-3 rounded-2xl border border-white/10 flex items-center gap-4">
-            {/* Perspective switcher */}
             {activeRoom !== 'all' && (
               <>
                 <div className="flex bg-white/10 p-0.5 rounded-xl">
@@ -349,14 +413,16 @@ export default function DigitalTwin() {
               <div>
                 <span className="text-white/40 font-bold uppercase tracking-wider">Load</span>
                 <span className="text-white font-bold ml-2">
-                  {(activeDevices.reduce((acc, d) => acc + (d.power === 'ON' ? parseFloat(d.consumption || '0') : 0), 0)).toFixed(1)} kWh
+                  {activeDevices
+                    .filter(d => d.power === 'ON')
+                    .reduce((acc, d) => acc + parseFloat(d.consumption || '0'), 0)
+                    .toFixed(1)} kWh
                 </span>
               </div>
             </div>
 
             <div className="w-px h-6 bg-white/20" />
 
-            {/* Hint */}
             <div className="flex items-center gap-1.5 text-white/30 text-[10px] font-medium">
               <Move3D size={14} />
               <span>Scroll to zoom • Drag to rotate</span>
@@ -364,7 +430,7 @@ export default function DigitalTwin() {
           </div>
         </div>
 
-        {/* ── RIGHT DRAWER: Devices (toggle) ──────────────────────────── */}
+        {/* ── RIGHT DRAWER: Devices ──────────────────────────── */}
         <button
           onClick={() => setRightPanelOpen(!rightPanelOpen)}
           className="absolute top-1/2 -translate-y-1/2 right-0 z-30 w-8 h-20 bg-black/50 backdrop-blur-md border border-r-0 border-white/10 text-white/60 hover:text-white flex items-center justify-center rounded-l-xl transition-all pointer-events-auto hover:bg-black/70"
@@ -378,20 +444,31 @@ export default function DigitalTwin() {
             <div className="flex items-center justify-between mb-4 px-1">
               <h3 className="text-xs font-bold tracking-widest uppercase text-white/50">Connected Devices</h3>
               <span className="text-xs font-bold text-green-400 bg-green-400/10 ring-1 ring-green-400/20 px-2.5 py-1 rounded-md">
-                {activeDevices.filter(d => d.status === 'Online').length} Online
+                {activeDevices.filter(d => d.status === 'ON').length} Online
               </span>
             </div>
             <div className="flex flex-col gap-3 overflow-y-auto pb-4 pr-1 scroll-smooth flex-1">
-              {activeDevices.map((device, idx) => (
-                <DeviceCard
-                  key={idx}
-                  icon={device.icon}
-                  name={device.name}
-                  status={device.status}
-                  power={device.power}
-                  consumption={device.consumption}
-                />
-              ))}
+              {loading ? (
+                <div className="flex items-center justify-center py-8 gap-2 text-white/40">
+                  <Loader2 size={20} className="animate-spin" />
+                  <span className="text-sm font-semibold">Loading devices...</span>
+                </div>
+              ) : activeDevices.length === 0 ? (
+                <div className="flex items-center justify-center py-8 text-white/40 text-sm font-semibold">
+                  No devices found.
+                </div>
+              ) : (
+                activeDevices.map((device, idx) => (
+                  <DeviceCard
+                    key={idx}
+                    icon={device.icon}
+                    name={device.name}
+                    status={device.status}
+                    power={device.power}
+                    consumption={device.consumption}
+                  />
+                ))
+              )}
             </div>
           </div>
         </div>

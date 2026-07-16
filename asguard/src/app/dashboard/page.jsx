@@ -1,15 +1,22 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '../../context/AuthContext'
 import {
-  Thermometer,
+  fetchUserProfile,
+  fetchLogCount,
+  fetchTodayLogs,
+  fetchWeeklyLogs,
+  getDashboardMetrics,
+  generateRecommendations,
+  getUniqueDevices,
+} from '../../firebase/firestoreService'
+import {
   Zap,
-  Sparkles,
   ChevronRight,
   CheckCircle2,
   Wifi,
-  BarChart3,
-  RefreshCw,
   Power,
   Settings,
   Activity,
@@ -17,12 +24,12 @@ import {
   Smartphone,
   Bot,
   FlaskConical,
-  Bell,
+  Loader2,
+  AlertTriangle,
+  BarChart3,
 } from 'lucide-react'
 import Header from '../../components/Header'
 import AppLayout from '../../components/AppLayout'
-
-// ── Page-local Sub-components ─────────────────────────────────────────────────
 
 function StatCard({ icon: Icon, label, value, subtext, colorClass, bgClass }) {
   return (
@@ -55,17 +62,142 @@ function QuickActionCard({ icon: Icon, label, onClick }) {
   )
 }
 
-// ── Dashboard Page ─────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const router = useRouter()
+  const { currentUser, loading: authLoading } = useAuth()
+
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  const [houseName, setHouseName] = useState('')
+  const [metrics, setMetrics] = useState({
+    totalLogs: 0,
+    connectedDevices: 0,
+    todayUsageKwh: 0,
+    todayCost: 0,
+    efficiencyScore: 0,
+    chartData: [],
+    recommendation: null,
+  })
+
+  useEffect(() => {
+    let isMounted = true
+
+    async function fetchDashboardData() {
+      if (!currentUser?.uid) {
+        if (isMounted) setLoading(false)
+        return
+      }
+
+      setLoading(true)
+      setError(null)
+
+      try {
+        // Step 1: Read user profile
+        const userProfile = await fetchUserProfile(currentUser.uid)
+
+        if (!userProfile) {
+          if (isMounted) {
+            setError(`User document not found in Firestore.`)
+            setLoading(false)
+          }
+          return
+        }
+
+        if (isMounted) {
+          setHouseName(userProfile.houseName || '')
+        }
+
+        const houseId = userProfile.house_id || userProfile.houseId || 'HOUSE001'
+
+        // Step 2: Parallel fetch — log count + today's logs + weekly logs
+        const [totalLogCount, todayLogs, weeklyLogs] = await Promise.all([
+          fetchLogCount(houseId),
+          fetchTodayLogs(houseId),
+          fetchWeeklyLogs(houseId),
+        ])
+
+        // Step 3: Compute dashboard metrics
+        const dashMetrics = getDashboardMetrics(todayLogs, weeklyLogs, totalLogCount)
+
+        // Step 4: Generate recommendation from weekly logs
+        const recs = generateRecommendations(weeklyLogs)
+
+        if (isMounted) {
+          setMetrics({
+            ...dashMetrics,
+            recommendation: recs.mainRecommendation
+              ? {
+                  text: `Your ${recs.mainRecommendation.applianceName} contributed ${recs.mainRecommendation.percent}% of recent energy usage. ${recs.mainRecommendation.actionText}`,
+                  saving: recs.estimatedMonthlySaving > 0 ? `₹${recs.estimatedMonthlySaving}` : null,
+                }
+              : null,
+          })
+          setLoading(false)
+        }
+      } catch (err) {
+        console.error('Error fetching dashboard metrics:', err)
+        if (isMounted) {
+          setError(`Failed to load dashboard: ${err.message}`)
+          setLoading(false)
+        }
+      }
+    }
+
+    fetchDashboardData()
+
+    return () => {
+      isMounted = false
+    }
+  }, [currentUser?.uid])
+
+  if (authLoading || loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#F7F9FC]">
+        <div className="flex flex-col items-center gap-3 text-gray-500">
+          <Loader2 size={36} className="animate-spin text-[#1428A0]" />
+          <p className="text-sm font-semibold">Loading Dashboard...</p>
+        </div>
+      </div>
+    )
+  }
+
+  const firstName = currentUser?.name ? currentUser.name.split(" ")[0] : "User"
+
+  // Compute SVG Points for chartData
+  const maxKwh = metrics.chartData.length > 0
+    ? Math.max(50, ...metrics.chartData.map(d => d.totalKwh))
+    : 50
+
+  const points = metrics.chartData.map((d, index) => {
+    const x = metrics.chartData.length > 1 ? (index / (metrics.chartData.length - 1)) * 100 : 50
+    const y = 100 - (d.totalKwh / maxKwh) * 90
+    return { x, y }
+  })
+
+  const linePath = points.reduce((path, pt, index) => {
+    return path + `${index === 0 ? 'M' : 'L'} ${pt.x.toFixed(1)},${pt.y.toFixed(1)}`
+  }, '')
+
+  const fillPath = points.length > 0 ? `${linePath} L 100,100 L 0,100 Z` : ''
 
   return (
     <AppLayout>
-      <Header title="Welcome Back" subtitle="Home Overview" />
+      <Header
+        title={`Welcome Back, ${firstName}`}
+        subtitle={houseName ? `${houseName} Overview` : 'Dashboard Overview'}
+      />
 
       {/* Scrollable Dashboard Area */}
       <div className="flex-1 overflow-y-auto px-6 lg:px-10 pb-16 scroll-smooth">
         <div className="max-w-[1400px] mx-auto space-y-6 lg:space-y-8">
+          
+          {error && (
+            <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm font-semibold flex items-center gap-3">
+              <AlertTriangle size={20} className="text-amber-600 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
 
           {/* Row 1: Hero & AI Rec */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-stretch">
@@ -84,16 +216,18 @@ export default function Dashboard() {
 
               <div className="relative z-10">
                 <div className="flex items-center gap-3 mb-6">
-                  <h3 className="text-[13px] font-bold tracking-widest uppercase text-gray-500">Digital Twin Status</h3>
+                  <h3 className="text-[13px] font-bold tracking-widest uppercase text-gray-500">Digital Twin & Firebase Status</h3>
                   <span className="bg-green-50 border border-green-200 text-green-700 px-3 py-1 rounded-full text-[11px] font-bold tracking-wide flex items-center gap-1.5 shadow-sm">
                     <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                    READY
+                    LIVE SYNCED
                   </span>
                 </div>
-                <h2 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4 tracking-tight leading-tight">Your home has been successfully reconstructed.</h2>
+                <h2 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4 tracking-tight leading-tight">
+                  Your smart home is live and synchronized with Firestore.
+                </h2>
                 <p className="text-gray-500 font-semibold flex items-center gap-2 mb-10">
                   <CheckCircle2 size={18} className="text-[#2189FF]" />
-                  Last Scan: Today at 09:41 AM
+                  Connected User: {currentUser?.email || "Authenticated Session"}
                 </p>
                 <button
                   onClick={() => router.push('/digital-twin')}
@@ -115,32 +249,42 @@ export default function Dashboard() {
                   </div>
                   <h3 className="text-sm font-bold tracking-widest uppercase text-blue-100">Latest Recommendation</h3>
                 </div>
-                <p className="text-xl lg:text-2xl font-medium leading-snug mb-8">
-                  Increase AC temperature from{' '}
-                  <span className="font-bold text-[#2189FF] bg-white px-2 py-1 rounded-lg mx-1 shadow-sm">22°C</span>
-                  {' '}to{' '}
-                  <span className="font-bold text-[#2189FF] bg-white px-2 py-1 rounded-lg mx-1 shadow-sm">24°C</span>.
-                </p>
-                <div className="bg-black/20 rounded-[16px] p-5 mb-8 border border-white/10 flex items-center justify-between backdrop-blur-sm">
-                  <span className="text-sm text-blue-100 font-semibold">Potential Saving</span>
-                  <span className="text-3xl font-bold text-white flex items-center gap-1.5">
-                    <Zap size={24} className="text-yellow-400 fill-yellow-400" />
-                    10%
-                  </span>
-                </div>
+                {metrics.recommendation ? (
+                  <>
+                    <p className="text-xl lg:text-2xl font-medium leading-snug mb-8">
+                      {metrics.recommendation.text}
+                    </p>
+                    {metrics.recommendation.saving && (
+                      <div className="bg-black/20 rounded-[16px] p-5 mb-8 border border-white/10 flex items-center justify-between backdrop-blur-sm">
+                        <span className="text-sm text-blue-100 font-semibold">Potential Saving</span>
+                        <span className="text-3xl font-bold text-white flex items-center gap-1.5">
+                          <Zap size={24} className="text-yellow-400 fill-yellow-400" />
+                          {metrics.recommendation.saving}
+                        </span>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-xl lg:text-2xl font-medium leading-snug mb-8">
+                    No recommendations available.
+                  </p>
+                )}
               </div>
-              <button className="relative z-10 w-full bg-white text-[#1428A0] hover:bg-gray-50 font-bold text-base py-3.5 rounded-xl transition-all shadow-lg hover:shadow-xl active:scale-[0.98]">
-                View Recommendation
+              <button 
+                onClick={() => router.push('/ai-assistant')}
+                className="relative z-10 w-full bg-white text-[#1428A0] hover:bg-gray-50 font-bold text-base py-3.5 rounded-xl transition-all shadow-lg hover:shadow-xl active:scale-[0.98]"
+              >
+                View AI Insights
               </button>
             </div>
           </div>
 
           {/* Row 2: Stats */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8 items-stretch">
-            <StatCard icon={Wifi}     label="Connected Devices"   value="14"       subtext="SmartThings Hub Active" colorClass="text-[#2189FF]"    bgClass="bg-[#2189FF]/10" />
-            <StatCard icon={Power}    label="Today's Energy Usage" value="12.4 kWh" subtext="-2.1% from yesterday" colorClass="text-orange-500"   bgClass="bg-orange-50" />
-            <StatCard icon={Settings} label="Automation Rules"    value="8"        subtext="Running perfectly"      colorClass="text-purple-500"  bgClass="bg-purple-50" />
-            <StatCard icon={Activity} label="Efficiency Score"    value="94/100"   subtext="Excellent condition"    colorClass="text-green-500"   bgClass="bg-green-50" />
+            <StatCard icon={Wifi}     label="Connected Devices"   value={`${metrics.connectedDevices}`} subtext="From Energy Logs" colorClass="text-[#2189FF]"    bgClass="bg-[#2189FF]/10" />
+            <StatCard icon={Power}    label="Daily Household Energy" value={`${metrics.todayUsageKwh} kWh`} subtext={`₹${metrics.todayCost.toFixed(2)} today`} colorClass="text-orange-500"   bgClass="bg-orange-50" />
+            <StatCard icon={Settings} label="Cloud Energy Logs"    value={`${metrics.totalLogs.toLocaleString()}`} subtext="Firestore Records" colorClass="text-purple-500"  bgClass="bg-purple-50" />
+            <StatCard icon={Activity} label="Efficiency Score"    value={`${metrics.efficiencyScore}/100`} subtext="Based on anomaly ratio" colorClass="text-green-500"   bgClass="bg-green-50" />
           </div>
 
           {/* Row 3: Quick Actions */}
@@ -155,73 +299,80 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Row 4: Chart & Timeline */}
+          {/* Row 4: Chart & Activity */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-stretch pt-2">
 
-            {/* Line Chart */}
+            {/* Chart */}
             <div className="lg:col-span-8 bg-white rounded-[24px] p-8 lg:p-10 premium-shadow ring-1 ring-gray-100/50 flex flex-col h-full">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-10 gap-4">
                 <div>
                   <h3 className="text-xl font-bold text-gray-900 tracking-tight">Weekly Energy Usage</h3>
-                  <p className="text-sm font-semibold text-gray-500 mt-1.5">Total consumption across all connected devices</p>
+                  <p className="text-sm font-semibold text-gray-500 mt-1.5">Live consumption trend from Firestore telemetry</p>
                 </div>
-                <select className="bg-white border border-gray-200/80 hover:bg-gray-50 text-sm font-bold text-gray-700 py-2.5 pl-4 pr-10 rounded-xl focus:ring-4 focus:ring-[#2189FF]/10 focus:border-[#2189FF] cursor-pointer outline-none appearance-none transition-all shadow-sm shrink-0">
-                  <option>This Week</option>
-                  <option>Last Week</option>
-                </select>
               </div>
 
-              <div className="relative flex-1 w-full min-h-[240px] pt-8 pb-4">
-                <div className="absolute left-0 top-6 bottom-12 flex flex-col justify-between text-[10px] font-medium text-gray-400 w-10">
-                  <span>30k</span><span>20k</span><span>10k</span><span>0</span>
+              <div className="relative flex-1 w-full min-h-[240px] pt-2">
+                <div className="absolute left-0 top-0 bottom-8 flex flex-col justify-between text-[12px] font-bold text-gray-400 w-10">
+                  <span>{maxKwh.toFixed(0)} kWh</span><span>{(maxKwh * 0.7).toFixed(0)} kWh</span><span>{(maxKwh * 0.4).toFixed(0)} kWh</span><span>0</span>
                 </div>
-                <div className="absolute left-14 right-4 top-8 bottom-12">
+                <div className="absolute left-14 right-2 top-2 bottom-8">
                   <div className="absolute inset-0 flex flex-col justify-between">
-                    <div className="w-full border-b" style={{ borderColor: '#E8EDF5', borderWidth: '1px' }} />
-                    <div className="w-full border-b" style={{ borderColor: '#E8EDF5', borderWidth: '1px' }} />
-                    <div className="w-full border-b" style={{ borderColor: '#E8EDF5', borderWidth: '1px' }} />
-                    <div className="w-full border-b" style={{ borderColor: '#E8EDF5', borderWidth: '1px' }} />
+                    <div className="w-full border-b border-gray-100" />
+                    <div className="w-full border-b border-gray-100" />
+                    <div className="w-full border-b border-gray-100" />
+                    <div className="w-full border-b border-gray-200" />
                   </div>
-                  <svg className="w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 100">
-                    <defs>
-                      <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#2189FF" stopOpacity="0.05" />
-                        <stop offset="100%" stopColor="#2189FF" stopOpacity="0" />
-                      </linearGradient>
-                    </defs>
-                    <path className="chart-fill" d="M0,75 C2,70 4,80 6,75 C8,70 10,65 12,68 C14,70 16,55 18,50 C20,45 22,50 24,45 C26,40 28,30 30,35 C32,40 34,42 36,38 C38,34 40,25 42,28 C44,30 46,20 48,15 C50,10 52,15 54,12 C56,10 58,18 60,20 C62,22 64,15 66,12 C68,10 70,25 72,28 C74,30 76,20 78,15 C80,10 82,18 84,20 C86,22 88,30 90,25 C92,20 94,15 96,12 C98,10 99,15 100,10 L100,100 L0,100 Z" fill="url(#chartGradient)" />
-                    <path className="chart-line" d="M0,75 C2,70 4,80 6,75 C8,70 10,65 12,68 C14,70 16,55 18,50 C20,45 22,50 24,45 C26,40 28,30 30,35 C32,40 34,42 36,38 C38,34 40,25 42,28 C44,30 46,20 48,15 C50,10 52,15 54,12 C56,10 58,18 60,20 C62,22 64,15 66,12 C68,10 70,25 72,28 C74,30 76,20 78,15 C80,10 82,18 84,20 C86,22 88,30 90,25 C92,20 94,15 96,12 C98,10 99,15 100,10" fill="none" stroke="#2189FF" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-                    
-                    {/* Hover-only markers for interaction density */}
-                    <g className="chart-interaction-layer">
-                      {[
-                        { cx: 12, cy: 68 }, { cx: 24, cy: 45 }, { cx: 36, cy: 38 }, 
-                        { cx: 48, cy: 15 }, { cx: 60, cy: 20 }, { cx: 72, cy: 28 }, 
-                        { cx: 84, cy: 20 }, { cx: 96, cy: 12 }
-                      ].map((pt, i) => (
-                        <circle key={i} cx={pt.cx} cy={pt.cy} r="3" fill="#2189FF" className="opacity-0 hover:opacity-100 transition-opacity duration-200 cursor-crosshair" />
-                      ))}
-                    </g>
-                  </svg>
+                  {metrics.chartData.length > 0 ? (
+                    <svg className="w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 100">
+                      <defs>
+                        <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#2189FF" stopOpacity="0.05" />
+                          <stop offset="100%" stopColor="#2189FF" stopOpacity="0" />
+                        </linearGradient>
+                      </defs>
+                      <path className="chart-fill" d={fillPath} fill="url(#chartGradient)" />
+                      <path className="chart-line" d={linePath} fill="none" stroke="#2189FF" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                      
+                      <g className="chart-interaction-layer">
+                        {points.map((pt, i) => (
+                          <circle
+                            key={i}
+                            cx={pt.x}
+                            cy={pt.y}
+                            r="3"
+                            fill="#2189FF"
+                            className="opacity-0 hover:opacity-100 transition-opacity duration-200 cursor-crosshair"
+                            title={`${metrics.chartData[i].date}: ${metrics.chartData[i].totalKwh} kWh`}
+                          />
+                        ))}
+                      </g>
+                    </svg>
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-sm font-semibold text-gray-400">
+                      No energy logs available.
+                    </div>
+                  )}
                 </div>
                 <div className="absolute left-14 right-4 bottom-2 flex justify-between text-[10px] font-medium text-gray-400">
-                  <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+                  {metrics.chartData.map((d, idx) => (
+                    <span key={idx}>{d.dayOfWeek ? d.dayOfWeek.substring(0, 3) : ''}</span>
+                  ))}
                 </div>
               </div>
             </div>
 
             {/* Activity Timeline */}
             <div className="lg:col-span-4 bg-white rounded-[24px] p-8 lg:p-10 premium-shadow ring-1 ring-gray-100/50 h-full">
-              <h3 className="text-xl font-bold text-gray-900 tracking-tight mb-8">Recent Activity</h3>
+              <h3 className="text-xl font-bold text-gray-900 tracking-tight mb-8">Firestore Activity</h3>
               <div className="relative pl-7 space-y-9">
                 <div className="absolute left-[13px] top-2 bottom-2 w-[2px] bg-gray-100" />
                 {[
-                  { label: 'AI Recommendation Generated', time: 'Just now',        active: true },
-                  { label: 'Firebase Synced',             time: '10 mins ago',    active: false },
-                  { label: 'Digital Twin Generated',      time: 'Today, 09:45 AM', active: false },
-                  { label: 'Room Scan Completed',         time: 'Today, 09:41 AM', active: false },
-                ].map((item) => (
-                  <div key={item.label} className="relative">
+                  { label: 'Firebase User Session Active', time: currentUser?.email || 'Authenticated', active: true },
+                  { label: 'Cloud Telemetry Streamed', time: `${metrics.totalLogs.toLocaleString()} Firestore Records`, active: true },
+                  { label: 'Energy Analysis Complete', time: `${metrics.connectedDevices} Devices Tracked`, active: false },
+                  { label: 'SmartThings Digital Twin Ready', time: houseName ? `${houseName} Model Live` : 'Model Live', active: false },
+                ].map((item, idx) => (
+                  <div key={idx} className="relative">
                     <div className={`absolute -left-7 top-0.5 w-7 h-7 rounded-full ${item.active ? 'bg-blue-50' : 'bg-gray-100'} border-[3px] border-white shadow-sm flex items-center justify-center`}>
                       <div className={`w-2.5 h-2.5 rounded-full ${item.active ? 'bg-[#2189FF]' : 'bg-gray-400'}`} />
                     </div>
@@ -231,6 +382,7 @@ export default function Dashboard() {
                 ))}
               </div>
             </div>
+
           </div>
 
           <div className="h-6" />

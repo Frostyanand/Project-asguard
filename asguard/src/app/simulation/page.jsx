@@ -1,7 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '../../context/AuthContext'
+import {
+  fetchUserProfile,
+  fetchMonthlyLogs,
+  getSimulationMetrics,
+  generateAutomationRules,
+  getDatasetReferenceDate,
+} from '../../firebase/firestoreService'
 import {
   Zap,
   IndianRupee,
@@ -11,6 +19,8 @@ import {
   Play,
   Leaf,
   FlaskConical,
+  Loader2,
+  AlertTriangle,
 } from 'lucide-react'
 import Header from '../../components/Header'
 import AppLayout from '../../components/AppLayout'
@@ -33,28 +43,104 @@ function SummaryCard({ title, value, icon: Icon, color }) {
 export default function Simulation() {
   const [mode, setMode] = useState('Eco Mode')
   const router = useRouter()
+  const { currentUser, loading: authLoading } = useAuth()
+
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [simMetrics, setSimMetrics] = useState(null)
+  const [optimizations, setOptimizations] = useState([])
 
   const modes = ['Current Mode', 'Eco Mode', 'Comfort Mode', 'Vacation Mode', 'Custom Mode']
-
-  const optimizations = [
-    { title: 'Increase AC Temperature', saving: '₹120', status: 'Active' },
-    { title: 'Delay Water Heater',       saving: '₹80',  status: 'Active' },
-    { title: 'Turn Off Idle Lights',     saving: '₹50',  status: 'Active' },
-    { title: 'Enable Smart TV Sleep',    saving: '₹40',  status: 'Pending' },
-  ]
-
-  const predictionSummary = [
-    { l: 'Estimated Saving',  v: '₹420' },
-    { l: 'Energy Reduction',  v: '14%'  },
-    { l: 'Carbon Reduction',  v: '9%'   },
-    { l: 'Confidence',        v: 'High' },
-  ]
 
   const simBadge = (
     <div className="bg-[#1428A0]/10 text-[#1428A0] p-1.5 rounded-lg shadow-sm">
       <FlaskConical size={16} strokeWidth={2.5} />
     </div>
   )
+
+  useEffect(() => {
+    let isMounted = true
+
+    async function fetchSimulationData() {
+      if (!currentUser?.uid) {
+        if (isMounted) setLoading(false)
+        return
+      }
+      setLoading(true)
+      setError(null)
+
+      try {
+        const userProfile = await fetchUserProfile(currentUser.uid)
+        const houseId = userProfile?.house_id || userProfile?.houseId || 'HOUSE001'
+
+        const refDateInfo = await getDatasetReferenceDate(houseId)
+        const monthlyLogs = await fetchMonthlyLogs(houseId)
+
+        const computed = getSimulationMetrics(monthlyLogs, refDateInfo)
+        const rules = generateAutomationRules(monthlyLogs)
+
+        // Map automation rules to optimization items
+        const optItems = rules.map((r) => ({
+          title: r.thenText,
+          saving: r.saving,
+          savingPercent: r.savingPercent,
+          status: r.defaultEnabled ? 'Active' : 'Pending',
+        }))
+
+        if (isMounted) {
+          setSimMetrics(computed)
+          setOptimizations(optItems)
+          setLoading(false)
+        }
+      } catch (err) {
+        console.error('Simulation fetch error:', err)
+        if (isMounted) {
+          setError(`Failed to load simulation data: ${err.message}`)
+          setLoading(false)
+        }
+      }
+    }
+
+    fetchSimulationData()
+    return () => { isMounted = false }
+  }, [currentUser?.uid])
+
+  if (authLoading || loading) {
+    return (
+      <AppLayout>
+        <Header title="Energy Simulation" titleExtra={simBadge} subtitle="Compare different energy-saving strategies before applying SmartThings automation." />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3 text-gray-500">
+            <Loader2 size={36} className="animate-spin text-[#1428A0]" />
+            <p className="text-sm font-semibold">Computing simulation from energy logs...</p>
+          </div>
+        </div>
+      </AppLayout>
+    )
+  }
+
+  const predictionSummary = simMetrics ? [
+    { l: 'Estimated Saving',  v: simMetrics.estimatedSaving > 0 ? `₹${simMetrics.estimatedSaving}` : '₹0' },
+    { l: 'Energy Reduction',  v: `${simMetrics.energyReductionPercent}%` },
+    { l: 'Carbon Reduction',  v: `${simMetrics.carbonReductionPercent}%` },
+    { l: 'Confidence',        v: simMetrics.confidence },
+  ] : []
+
+  // Build prediction graph SVG from dailyChartData
+  const chartData = simMetrics?.dailyChartData || []
+  const maxKwh = chartData.length > 0 ? Math.max(0.01, ...chartData.map(d => d.totalKwh)) : 1
+
+  const buildPath = (keyName) => {
+    const pts = chartData.map((d, i) => ({
+      x: chartData.length > 1 ? (i / (chartData.length - 1)) * 100 : 50,
+      y: 40 - (d[keyName] / maxKwh) * 36, // scale into viewBox height 40
+    }))
+    return pts.reduce((p, pt, i) => p + `${i === 0 ? 'M' : 'L'} ${pt.x.toFixed(1)},${pt.y.toFixed(1)}`, '')
+  }
+
+  const actualPath = chartData.length > 0 ? buildPath('totalKwh') : ''
+  const optimizedPath = chartData.length > 0 ? buildPath('optimizedKwh') : ''
+  const fillPath = actualPath ? `${actualPath} L 100,40 L 0,40 Z` : ''
 
   return (
     <AppLayout>
@@ -67,12 +153,35 @@ export default function Simulation() {
       <div className="flex-1 overflow-y-auto px-6 lg:px-10 pb-12 scroll-smooth">
         <div className="max-w-[1400px] mx-auto pt-4 space-y-6 lg:space-y-8">
 
+          {error && (
+            <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm font-semibold flex items-center gap-3">
+              <AlertTriangle size={20} className="text-amber-600 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
           {/* Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <SummaryCard title="Current Monthly Cost"    value="₹4,860"    icon={IndianRupee}  color="bg-blue-50" />
-            <SummaryCard title="Current Energy Usage"    value="382 kWh"   icon={Zap}          color="bg-orange-50" />
-            <SummaryCard title="Carbon Footprint"        value="126 kg CO₂" icon={Leaf}         color="bg-green-50" />
-            <SummaryCard title="Estimated Monthly Saving" value="₹420"     icon={TrendingDown}  color="bg-purple-50" />
+            <SummaryCard
+              title="Current Monthly Cost"
+              value={simMetrics ? `₹${simMetrics.currentMonthlyCost.toLocaleString()}` : '₹0'}
+              icon={IndianRupee} color="bg-blue-50"
+            />
+            <SummaryCard
+              title="Current Energy Usage"
+              value={simMetrics ? `${simMetrics.currentEnergyKwh} kWh` : '0 kWh'}
+              icon={Zap} color="bg-orange-50"
+            />
+            <SummaryCard
+              title="Carbon Footprint"
+              value={simMetrics ? `${simMetrics.carbonFootprint} kg CO₂` : '0 kg CO₂'}
+              icon={Leaf} color="bg-green-50"
+            />
+            <SummaryCard
+              title="Estimated Monthly Saving"
+              value={simMetrics && simMetrics.estimatedSaving > 0 ? `₹${simMetrics.estimatedSaving}` : '₹0'}
+              icon={TrendingDown} color="bg-purple-50"
+            />
           </div>
 
           {/* Mode Selector + Prediction */}
@@ -96,27 +205,38 @@ export default function Simulation() {
 
               <div className="mt-8 pt-8 border-t border-gray-100">
                 <h3 className="font-bold text-xl mb-6 text-gray-900">Energy Prediction Graph</h3>
-                <svg className="w-full h-48 overflow-visible relative z-10" preserveAspectRatio="none" viewBox="0 0 100 40">
-                  <defs>
-                    <linearGradient id="simGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#2189FF" stopOpacity="0.05" />
-                      <stop offset="100%" stopColor="#2189FF" stopOpacity="0" />
-                    </linearGradient>
-                  </defs>
-                  <path className="chart-fill" d="M0,35 C5,32 10,38 15,30 C20,25 25,28 30,22 C35,18 40,25 45,20 C50,15 55,18 60,12 C65,10 70,15 75,8 C80,5 85,10 90,6 C95,4 98,6 100,4 L100,40 L0,40 Z" fill="url(#simGradient)" />
-                  <path d="M0,35 C5,32 10,38 15,30 C20,25 25,28 30,22 C35,18 40,25 45,20 C50,15 55,18 60,12 C65,10 70,15 75,8 C80,5 85,10 90,6 C95,4 98,6 100,4" fill="none" stroke="#2189FF" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" className="chart-line" />
-                  <path d="M0,38 C5,35 10,40 15,33 C20,28 25,32 30,25 C35,22 40,28 45,23 C50,18 55,22 60,16 C65,14 70,18 75,12 C80,10 85,14 90,10 C95,8 98,10 100,8" fill="none" stroke="#94A3B8" strokeWidth="1" strokeDasharray="4" strokeLinecap="round" />
-                  
-                  {/* Hover-only markers for interaction density */}
-                  <g className="chart-interaction-layer">
-                    {[
-                      { cx: 15, cy: 30 }, { cx: 30, cy: 22 }, { cx: 45, cy: 20 }, 
-                      { cx: 60, cy: 12 }, { cx: 75, cy: 8 }, { cx: 90, cy: 6 }
-                    ].map((pt, i) => (
-                      <circle key={i} cx={pt.cx} cy={pt.cy} r="2.5" fill="#2189FF" className="opacity-0 hover:opacity-100 transition-opacity duration-200 cursor-crosshair" />
-                    ))}
-                  </g>
-                </svg>
+                {chartData.length > 0 ? (
+                  <svg className="w-full h-48 overflow-visible relative z-10" preserveAspectRatio="none" viewBox="0 0 100 40">
+                    <defs>
+                      <linearGradient id="simGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#2189FF" stopOpacity="0.05" />
+                        <stop offset="100%" stopColor="#2189FF" stopOpacity="0" />
+                      </linearGradient>
+                    </defs>
+                    <path className="chart-fill" d={fillPath} fill="url(#simGradient)" />
+                    {/* Actual usage */}
+                    <path d={actualPath} fill="none" stroke="#2189FF" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" className="chart-line" />
+                    {/* Optimized projection */}
+                    <path d={optimizedPath} fill="none" stroke="#94A3B8" strokeWidth="1" strokeDasharray="4" strokeLinecap="round" />
+
+                    <g className="chart-interaction-layer">
+                      {chartData.map((d, i) => {
+                        const x = chartData.length > 1 ? (i / (chartData.length - 1)) * 100 : 50
+                        const y = 40 - (d.totalKwh / maxKwh) * 36
+                        return (
+                          <circle key={i} cx={x.toFixed(1)} cy={y.toFixed(1)} r="2.5" fill="#2189FF"
+                            className="opacity-0 hover:opacity-100 transition-opacity duration-200 cursor-crosshair">
+                            <title>{d.date}: {d.totalKwh} kWh</title>
+                          </circle>
+                        )
+                      })}
+                    </g>
+                  </svg>
+                ) : (
+                  <div className="h-48 flex items-center justify-center text-sm font-semibold text-gray-400">
+                    No monthly data available.
+                  </div>
+                )}
                 <div className="flex items-center gap-6 mt-4">
                   <div className="flex items-center gap-2"><div className="w-4 h-1 bg-[#2189FF] rounded-full" /><span className="text-xs font-semibold text-gray-600">With Optimization</span></div>
                   <div className="flex items-center gap-2"><div className="w-4 h-1 bg-gray-300 rounded-full" /><span className="text-xs font-semibold text-gray-600">Current</span></div>
@@ -129,12 +249,14 @@ export default function Simulation() {
               <div>
                 <h3 className="font-bold text-xl mb-6">Prediction Summary</h3>
                 <div className="space-y-4">
-                  {predictionSummary.map((item) => (
+                  {predictionSummary.length > 0 ? predictionSummary.map((item) => (
                     <div key={item.l} className="flex justify-between border-b border-[#2189FF]/60 pb-3">
                       <span className="text-blue-200 text-sm font-medium">{item.l}</span>
                       <span className="font-bold">{item.v}</span>
                     </div>
-                  ))}
+                  )) : (
+                    <p className="text-blue-200 text-sm">No prediction data available.</p>
+                  )}
                 </div>
               </div>
               <button className="w-full bg-white text-[#1428A0] py-4 rounded-xl font-bold mt-8 hover:bg-gray-50 flex items-center justify-center gap-2 transition-colors active:scale-[0.98]">
@@ -146,19 +268,23 @@ export default function Simulation() {
           {/* Recommended Optimizations */}
           <div className="bg-white p-8 rounded-[28px] premium-shadow ring-1 ring-gray-100/80">
             <h3 className="font-bold text-xl mb-6 text-gray-900">Recommended Optimizations</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {optimizations.map((opt) => (
-                <div key={opt.title} className="flex items-center justify-between p-4 border border-gray-100 rounded-2xl hover:bg-gray-50/50 transition-colors">
-                  <div>
-                    <p className="font-bold text-gray-900 text-sm">{opt.title}</p>
-                    <p className="text-xs text-green-600 font-bold mt-1">Estimated Saving: {opt.saving}</p>
+            {optimizations.length === 0 ? (
+              <p className="text-sm font-semibold text-gray-400">No optimization recommendations available.</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {optimizations.map((opt, idx) => (
+                  <div key={idx} className="flex items-center justify-between p-4 border border-gray-100 rounded-2xl hover:bg-gray-50/50 transition-colors">
+                    <div>
+                      <p className="font-bold text-gray-900 text-sm">{opt.title}</p>
+                      <p className="text-xs text-green-600 font-bold mt-1">Estimated Saving: {opt.saving} ({opt.savingPercent})</p>
+                    </div>
+                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${opt.status === 'Active' ? 'bg-green-50 text-green-600 ring-1 ring-green-100' : 'bg-gray-100 text-gray-500'}`}>
+                      {opt.status}
+                    </span>
                   </div>
-                  <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${opt.status === 'Active' ? 'bg-green-50 text-green-600 ring-1 ring-green-100' : 'bg-gray-100 text-gray-500'}`}>
-                    {opt.status}
-                  </span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Bottom Actions */}

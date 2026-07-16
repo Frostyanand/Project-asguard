@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '../../context/AuthContext'
+import { getFriendlyErrorMessage } from '../../firebase/authService'
 import {
   Lightbulb,
   Zap,
@@ -10,6 +12,8 @@ import {
   Check,
   Eye,
   EyeOff,
+  AlertCircle,
+  Loader2,
 } from 'lucide-react'
 
 // ── Local Illustration Component ───────────────────────────────────────────────
@@ -86,14 +90,52 @@ function DigitalTwinIllustration() {
 
 // ── Login Page ─────────────────────────────────────────────────────────────────
 export default function Login() {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [authError, setAuthError] = useState(null)
+  
   const router = useRouter()
+  const { loginWithGoogle, loginWithEmailPassword } = useAuth()
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault()
-    // TODO: integrate Firebase Auth here
-    router.push('/dashboard')
+    if (!email || !password) {
+      setAuthError("Please fill in both Email and Password.")
+      return
+    }
+
+    setIsSubmitting(true)
+    setAuthError(null)
+    console.log("[Login Runtime Audit] Login Started for:", email);
+    try {
+      await loginWithEmailPassword(email, password)
+      console.log("[Login Runtime Audit] Login Successful. Redirecting to dashboard...");
+      router.push('/dashboard')
+    } catch (err) {
+      console.error("[Login Runtime Audit Failure] Exact Code:", err?.code, "Message:", err?.message, "Stack:", err?.stack);
+      setAuthError(getFriendlyErrorMessage(err))
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleGoogleLogin = async () => {
+    setIsSubmitting(true)
+    setAuthError(null)
+    console.log("[Login Runtime Audit] Google Login Started...");
+    try {
+      await loginWithGoogle()
+      console.log("[Login Runtime Audit] Google Login Successful. Redirecting to dashboard...");
+      router.push('/dashboard')
+    } catch (err) {
+      console.error("[Login Runtime Audit Failure] Exact Code:", err?.code, "Message:", err?.message, "Stack:", err?.stack);
+      setAuthError(getFriendlyErrorMessage(err))
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -145,10 +187,18 @@ export default function Login() {
 
           {/* Card */}
           <div className="bg-white rounded-[24px] p-8 sm:p-12 shadow-[0_8px_40px_rgb(0,0,0,0.04),0_1px_3px_rgb(0,0,0,0.02)] ring-1 ring-gray-100">
-            <div className="mb-10">
+            <div className="mb-8">
               <h2 className="text-3xl font-bold text-gray-900 mb-2.5 tracking-tight">Welcome Back</h2>
               <p className="text-gray-500 text-base">Sign in to continue to ASGUARD.</p>
             </div>
+
+            {/* Error Banner */}
+            {authError && (
+              <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-200 flex items-start gap-3 text-red-700 text-sm animate-shake">
+                <AlertCircle size={18} className="shrink-0 mt-0.5" />
+                <div className="flex-1">{authError}</div>
+              </div>
+            )}
 
             <form className="space-y-6" onSubmit={handleLogin}>
               {/* Email */}
@@ -156,8 +206,11 @@ export default function Login() {
                 <label className="text-sm font-semibold text-gray-700 block">Email</label>
                 <input
                   type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   placeholder="name@example.com"
                   className="w-full px-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-base text-gray-900 placeholder:text-gray-400 focus:bg-white focus:outline-none focus:border-[#2189FF] focus:ring-4 focus:ring-[#2189FF]/10 transition-all"
+                  required
                 />
               </div>
 
@@ -167,8 +220,11 @@ export default function Login() {
                 <div className="relative">
                   <input
                     type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
                     className="w-full px-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-base text-gray-900 placeholder:text-gray-400 focus:bg-white focus:outline-none focus:border-[#2189FF] focus:ring-4 focus:ring-[#2189FF]/10 transition-all pr-12"
+                    required
                   />
                   <button
                     type="button"
@@ -201,13 +257,23 @@ export default function Login() {
               <div className="space-y-3.5 pt-2">
                 <button
                   type="submit"
-                  className="w-full bg-[#1428A0] hover:bg-[#102080] text-white font-semibold text-base py-3.5 rounded-xl transition-all shadow-[0_4px_14px_rgba(20,40,160,0.25)] hover:shadow-[0_6px_20px_rgba(20,40,160,0.3)] active:scale-[0.98]"
+                  disabled={isSubmitting}
+                  className="w-full bg-[#1428A0] hover:bg-[#102080] text-white font-semibold text-base py-3.5 rounded-xl transition-all shadow-[0_4px_14px_rgba(20,40,160,0.25)] hover:shadow-[0_6px_20px_rgba(20,40,160,0.3)] active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-70"
                 >
-                  Login
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin" />
+                      Signing in...
+                    </>
+                  ) : (
+                    "Login"
+                  )}
                 </button>
                 <button
                   type="button"
-                  className="w-full bg-white ring-1 ring-inset ring-gray-200 hover:bg-gray-50 hover:ring-gray-300 text-gray-700 font-semibold text-base py-3.5 rounded-xl transition-all flex items-center justify-center gap-3 active:scale-[0.98]"
+                  onClick={handleGoogleLogin}
+                  disabled={isSubmitting}
+                  className="w-full bg-white ring-1 ring-inset ring-gray-200 hover:bg-gray-50 hover:ring-gray-300 text-gray-700 font-semibold text-base py-3.5 rounded-xl transition-all flex items-center justify-center gap-3 active:scale-[0.98] disabled:opacity-70"
                 >
                   <svg className="w-[18px] h-[18px] shrink-0" viewBox="0 0 24 24">
                     <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />

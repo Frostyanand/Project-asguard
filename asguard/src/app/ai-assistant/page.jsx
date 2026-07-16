@@ -1,6 +1,13 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '../../context/AuthContext'
+import {
+  fetchUserProfile,
+  fetchWeeklyLogs,
+  generateRecommendations,
+} from '../../firebase/firestoreService'
 import {
   Sparkles,
   MessageSquare,
@@ -16,6 +23,7 @@ import {
   FlaskConical,
   BarChart3,
   Bot,
+  Loader2,
 } from 'lucide-react'
 import Header from '../../components/Header'
 import AppLayout from '../../components/AppLayout'
@@ -72,9 +80,20 @@ function QuickActionBtn({ icon: Icon, label, primary, onClick }) {
   )
 }
 
+// Icon map for insights
+const INSIGHT_ICON_MAP = { Thermometer, Power, Lightbulb, AlertTriangle }
+function resolveInsightIcon(iconType) {
+  return INSIGHT_ICON_MAP[iconType] || Lightbulb
+}
+
 // ── AIAssistant Page ──────────────────────────────────────────────────────────
 export default function AIAssistant() {
   const router = useRouter()
+  const { currentUser, loading: authLoading } = useAuth()
+
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [rec, setRec] = useState(null) // generateRecommendations result
 
   const suggestedQuestions = [
     'How can I reduce my electricity bill?',
@@ -89,6 +108,46 @@ export default function AIAssistant() {
       <Sparkles size={16} strokeWidth={2.5} />
     </div>
   )
+
+  useEffect(() => {
+    let isMounted = true
+
+    async function fetchAIData() {
+      if (!currentUser?.uid) {
+        if (isMounted) setLoading(false)
+        return
+      }
+      setLoading(true)
+      setError(null)
+
+      try {
+        const userProfile = await fetchUserProfile(currentUser.uid)
+        const houseId = userProfile?.house_id || userProfile?.houseId || 'HOUSE001'
+
+        const weeklyLogs = await fetchWeeklyLogs(houseId)
+        const generated = generateRecommendations(weeklyLogs)
+
+        if (isMounted) {
+          setRec(generated)
+          setLoading(false)
+        }
+      } catch (err) {
+        console.error('AI Assistant fetch error:', err)
+        if (isMounted) {
+          setError(`Failed to load AI insights: ${err.message}`)
+          setLoading(false)
+        }
+      }
+    }
+
+    fetchAIData()
+    return () => { isMounted = false }
+  }, [currentUser?.uid])
+
+  const mainRec = rec?.mainRecommendation
+  const saving = rec?.estimatedMonthlySaving ?? 0
+  const confidence = rec?.confidence ?? 'Low'
+  const insights = rec?.insights ?? []
 
   return (
     <AppLayout>
@@ -135,37 +194,62 @@ export default function AIAssistant() {
                 </div>
 
                 <div className="bg-white ring-1 ring-blue-100/50 text-gray-800 rounded-[32px] rounded-tl-[10px] p-8 lg:p-10 w-full shadow-[0_12px_40px_rgba(20,40,160,0.06)]">
-                  <div className="space-y-6">
-                    <p className="text-[15px] lg:text-[16px] font-medium leading-relaxed">
-                      Your <span className="font-bold text-gray-900">Samsung WindFree AC</span> contributed{' '}
-                      <span className="font-bold text-orange-600 bg-orange-50 px-2.5 py-1 rounded-lg ring-1 ring-orange-100/50 mx-1">38%</span>
-                      of today&apos;s total energy usage.
-                    </p>
-                    <p className="text-[15px] lg:text-[16px] font-medium leading-relaxed">
-                      Increasing the temperature from{' '}
-                      <span className="font-bold text-[#1428A0] bg-blue-50/80 px-2.5 py-1 rounded-lg ring-1 ring-blue-100/50 mx-1">22°C</span>
-                      to{' '}
-                      <span className="font-bold text-[#1428A0] bg-blue-50/80 px-2.5 py-1 rounded-lg ring-1 ring-blue-100/50 mx-1">24°C</span>
-                      can reduce energy consumption by approximately 10%.
-                    </p>
-                    <div className="bg-gradient-to-r from-[#F4F7FB] to-white border border-gray-100/80 rounded-[24px] p-6 lg:p-7 flex flex-wrap items-center gap-8 lg:gap-12 shadow-sm mt-4">
-                      <div>
-                        <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">
-                          <TrendingDown size={16} className="text-green-500" strokeWidth={2.5} />
-                          Estimated Monthly Saving
+                  {loading ? (
+                    <div className="flex items-center gap-3 text-gray-400">
+                      <Loader2 size={20} className="animate-spin text-[#1428A0]" />
+                      <span className="text-sm font-semibold">Analysing your energy telemetry...</span>
+                    </div>
+                  ) : error ? (
+                    <div className="flex items-center gap-3 text-amber-600">
+                      <AlertTriangle size={20} />
+                      <span className="text-sm font-semibold">{error}</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      {mainRec ? (
+                        <>
+                          <p className="text-[15px] lg:text-[16px] font-medium leading-relaxed">
+                            Your{' '}
+                            <span className="font-bold text-gray-900">{mainRec.applianceName}</span>{' '}
+                            contributed{' '}
+                            <span className="font-bold text-orange-600 bg-orange-50 px-2.5 py-1 rounded-lg ring-1 ring-orange-100/50 mx-1">
+                              {mainRec.percent}%
+                            </span>{' '}
+                            of recent energy usage.
+                          </p>
+                          <p className="text-[15px] lg:text-[16px] font-medium leading-relaxed">
+                            {mainRec.actionText}
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-[15px] lg:text-[16px] font-medium leading-relaxed text-gray-500">
+                          No AI insights available. Start collecting energy data to receive recommendations.
                         </p>
-                        <p className="text-[32px] lg:text-[36px] font-extrabold text-[#1428A0] tracking-tighter leading-none mt-1">₹420</p>
-                      </div>
-                      <div className="w-[1px] h-12 bg-gray-200/80 hidden sm:block" />
-                      <div>
-                        <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">
-                          <CheckCircle2 size={16} className="text-[#2189FF]" strokeWidth={2.5} />
-                          Confidence
-                        </p>
-                        <p className="text-[22px] lg:text-[24px] font-extrabold text-gray-900 tracking-tight leading-none mt-1">High</p>
+                      )}
+
+                      <div className="bg-gradient-to-r from-[#F4F7FB] to-white border border-gray-100/80 rounded-[24px] p-6 lg:p-7 flex flex-wrap items-center gap-8 lg:gap-12 shadow-sm mt-4">
+                        <div>
+                          <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">
+                            <TrendingDown size={16} className="text-green-500" strokeWidth={2.5} />
+                            Estimated Monthly Saving
+                          </p>
+                          <p className="text-[32px] lg:text-[36px] font-extrabold text-[#1428A0] tracking-tighter leading-none mt-1">
+                            {saving > 0 ? `₹${saving}` : '₹0'}
+                          </p>
+                        </div>
+                        <div className="w-[1px] h-12 bg-gray-200/80 hidden sm:block" />
+                        <div>
+                          <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">
+                            <CheckCircle2 size={16} className="text-[#2189FF]" strokeWidth={2.5} />
+                            Confidence
+                          </p>
+                          <p className="text-[22px] lg:text-[24px] font-extrabold text-gray-900 tracking-tight leading-none mt-1">
+                            {confidence}
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
 
                 <div className="mt-4 ml-2 flex flex-wrap gap-3">
@@ -205,13 +289,30 @@ export default function AIAssistant() {
         <div className="w-[260px] lg:w-[280px] flex flex-col shrink-0 h-full z-20">
           <div className="flex items-center justify-between mb-5 px-1.5">
             <h3 className="text-[12px] font-bold tracking-widest uppercase text-gray-400">Today&apos;s AI Insights</h3>
-            <span className="text-[10px] font-bold text-[#1428A0] bg-blue-50 ring-1 ring-blue-100/50 px-2 py-0.5 rounded-md shadow-sm uppercase tracking-wider">Updated</span>
+            <span className="text-[10px] font-bold text-[#1428A0] bg-blue-50 ring-1 ring-blue-100/50 px-2 py-0.5 rounded-md shadow-sm uppercase tracking-wider">Live</span>
           </div>
           <div className="flex flex-col gap-3.5 overflow-y-auto pb-4 pr-2 scroll-smooth">
-            <InsightCard icon={Thermometer}   title="Climate Optimization"  value="10%"               type="saving" />
-            <InsightCard icon={Power}         title="Standby Power"         value="5%"                type="saving" />
-            <InsightCard icon={Lightbulb}     title="Lighting Optimization" value="8%"                type="saving" />
-            <InsightCard icon={AlertTriangle} title="Peak Hour Alert"       value="High Consumption"  type="alert" />
+            {loading ? (
+              <div className="flex items-center justify-center py-6 gap-2 text-gray-400">
+                <Loader2 size={18} className="animate-spin text-[#1428A0]" />
+                <span className="text-xs font-semibold">Loading insights...</span>
+              </div>
+            ) : insights.length > 0 ? (
+              insights.map((insight, idx) => {
+                const Icon = resolveInsightIcon(insight.iconType)
+                return (
+                  <InsightCard
+                    key={idx}
+                    icon={Icon}
+                    title={insight.title}
+                    value={insight.value}
+                    type={insight.type}
+                  />
+                )
+              })
+            ) : (
+              <p className="text-xs font-semibold text-gray-400 px-1">No insights available.</p>
+            )}
           </div>
         </div>
       </div>
