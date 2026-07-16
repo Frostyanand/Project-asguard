@@ -224,7 +224,7 @@ export default function Login() {
             <div className="mt-8 text-center">
               <p className="text-sm text-gray-600 font-medium">
                 Don&apos;t have an account?{' '}
-                <a href="#" className="font-semibold text-[#1428A0] hover:text-[#2189FF] hover:underline underline-offset-4 transition-all">
+                <a href="/create-account" className="font-semibold text-[#1428A0] hover:text-[#2189FF] hover:underline underline-offset-4 transition-all">
                   Create Account
                 </a>
               </p>

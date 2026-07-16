@@ -1,8 +1,10 @@
 'use client'
 
 import { Bell, LayoutDashboard } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 
 export default function Header({ title, subtitle, titleExtra }) {
+  const router = useRouter()
   return (
     <header className="h-24 px-6 lg:px-10 flex items-center justify-between shrink-0 bg-[#F7F9FC]/90 backdrop-blur-md z-20 sticky top-0">
       {/* Left: Title */}
@@ -28,7 +30,7 @@ export default function Header({ title, subtitle, titleExtra }) {
           <Bell size={22} />
         </button>
         <div className="h-8 w-[1px] bg-gray-200 hidden sm:block" />
-        <div className="flex items-center gap-3 cursor-pointer group">
+        <div className="flex items-center gap-3 cursor-pointer group" onClick={() => router.push('/profile')}>
           <div className="text-right hidden sm:block">
             <p className="text-sm font-bold text-gray-900 group-hover:text-[#1428A0] transition-colors">J. Doe</p>
             <p className="text-xs font-semibold text-gray-500">Administrator</p>
