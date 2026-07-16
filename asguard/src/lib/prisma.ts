@@ -3,6 +3,7 @@ import { PrismaNeon } from '@prisma/adapter-neon'
 import { neonConfig } from '@neondatabase/serverless'
 import ws from 'ws'
 
+// Set up WebSocket constructor for Neon serverless in Node environments
 neonConfig.webSocketConstructor = ws
 
 let dbUrl = process.env.DATABASE_URL || '';
@@ -14,7 +15,7 @@ const prismaClientSingleton = () => {
   return new PrismaClient({ adapter })
 }
 
-const globalForPrisma = globalThis
+const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | undefined }
 
 const prisma = globalForPrisma.prisma ?? prismaClientSingleton()
 
