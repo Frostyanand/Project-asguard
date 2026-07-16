@@ -30,6 +30,7 @@ import {
 } from 'lucide-react'
 import Header from '../../components/Header'
 import AppLayout from '../../components/AppLayout'
+import { useProgress } from '@react-three/drei'
 
 import dynamic from "next/dynamic";
 
@@ -39,6 +40,51 @@ const Scene = dynamic(
 );
 
 // ── Page-local Sub-components ─────────────────────────────────────────────────
+
+function TwinLoader() {
+  const { progress, active } = useProgress()
+  const [show, setShow] = useState(true)
+
+  useEffect(() => {
+    // If progress hits 100, start fade out
+    if (progress === 100) {
+      const timeout = setTimeout(() => setShow(false), 800)
+      return () => clearTimeout(timeout)
+    }
+  }, [progress])
+
+  if (!show) return null
+
+  return (
+    <div
+      className={`absolute inset-0 z-[100] flex flex-col items-center justify-center bg-gradient-to-b from-[#0a0e1a] to-[#111827] transition-opacity duration-1000 ease-in-out ${
+        progress === 100 ? 'opacity-0 pointer-events-none' : 'opacity-100 pointer-events-auto'
+      }`}
+    >
+      <div className="relative flex flex-col items-center scale-90 sm:scale-100">
+        <div className="relative w-24 h-24 mb-8">
+          <div className="absolute inset-0 border-[3px] border-[#1428A0]/30 rounded-full"></div>
+          <div
+            className="absolute inset-0 border-[3px] border-[#2189FF] rounded-full border-t-transparent animate-spin"
+            style={{ animationDuration: '1.2s' }}
+          ></div>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="text-white text-sm font-bold tracking-wider">{Math.round(progress)}%</span>
+          </div>
+        </div>
+        <h2 className="text-white font-bold tracking-widest text-sm sm:text-base uppercase mb-4">
+          Loading Digital Twin...
+        </h2>
+        <div className="w-56 h-1 bg-white/10 rounded-full overflow-hidden shadow-inner">
+          <div
+            className="h-full bg-gradient-to-r from-[#1428A0] to-[#2189FF] transition-all duration-300 ease-out shadow-[0_0_10px_rgba(33,137,255,0.5)]"
+            style={{ width: `${progress}%` }}
+          ></div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function RoomCard({ letter, label, active, onClick, icon: Icon }) {
   return (
@@ -180,6 +226,7 @@ export default function DigitalTwin() {
 
         {/* 3D Viewer fills entire viewport */}
         <div className="absolute inset-0 bg-gradient-to-b from-[#0a0e1a] to-[#111827]">
+          <TwinLoader />
           <Scene
             activeRoom={activeRoom === 'all' ? null : activeRoom}
             setActiveRoom={setActiveRoom}

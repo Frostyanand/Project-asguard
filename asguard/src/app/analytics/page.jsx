@@ -116,28 +116,39 @@ export default function Analytics() {
                   <option>This Week</option><option>Last Week</option><option>This Month</option>
                 </select>
               </div>
-              <div className="relative flex-1 w-full min-h-[260px] pt-4">
-                <div className="absolute left-0 top-0 bottom-8 flex flex-col justify-between text-[11px] font-bold text-gray-400 w-8">
+              <div className="relative flex-1 w-full min-h-[260px] pt-8 pb-4">
+                <div className="absolute left-0 top-6 bottom-12 flex flex-col justify-between text-[10px] font-medium text-gray-400 w-8">
                   <span>25k</span><span>15k</span><span>5k</span><span>0</span>
                 </div>
-                <div className="absolute left-10 right-2 top-2 bottom-8">
+                <div className="absolute left-10 right-4 top-8 bottom-12">
                   <div className="absolute inset-0 flex flex-col justify-between">
-                    <div className="w-full border-b border-gray-100" /><div className="w-full border-b border-gray-100" /><div className="w-full border-b border-gray-100" /><div className="w-full border-b border-gray-200" />
+                    <div className="w-full border-b" style={{ borderColor: '#E8EDF5', borderWidth: '1px' }} />
+                    <div className="w-full border-b" style={{ borderColor: '#E8EDF5', borderWidth: '1px' }} />
+                    <div className="w-full border-b" style={{ borderColor: '#E8EDF5', borderWidth: '1px' }} />
+                    <div className="w-full border-b" style={{ borderColor: '#E8EDF5', borderWidth: '1px' }} />
                   </div>
                   <svg className="w-full h-full overflow-visible relative z-10" preserveAspectRatio="none" viewBox="0 0 100 100">
                     <defs>
                       <linearGradient id="chartLineGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#2189FF" stopOpacity="0.25" />
+                        <stop offset="0%" stopColor="#2189FF" stopOpacity="0.05" />
                         <stop offset="100%" stopColor="#2189FF" stopOpacity="0" />
                       </linearGradient>
                     </defs>
-                    <path className="chart-fill" d="M0,80 C15,50 30,70 45,35 C60,5 75,40 100,20 L100,100 L0,100 Z" fill="url(#chartLineGradient)" />
-                    <path className="chart-line" d="M0,80 C15,50 30,70 45,35 C60,5 75,40 100,20" fill="none" stroke="#2189FF" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
-                    <circle cx="45" cy="35" r="3.5" fill="white" stroke="#1428A0" strokeWidth="2" />
-                    <circle cx="100" cy="20" r="4" fill="white" stroke="#1428A0" strokeWidth="2.5" />
+                    <path className="chart-fill" d="M0,80 C3,75 6,85 9,70 C12,55 15,65 18,60 C21,55 24,50 27,45 C30,40 33,50 36,45 C39,40 42,30 45,35 C48,40 51,25 54,30 C57,35 60,20 63,15 C66,10 69,20 72,15 C75,10 78,15 81,10 C84,5 87,15 90,12 C93,10 96,20 100,15 L100,100 L0,100 Z" fill="url(#chartLineGradient)" />
+                    <path className="chart-line" d="M0,80 C3,75 6,85 9,70 C12,55 15,65 18,60 C21,55 24,50 27,45 C30,40 33,50 36,45 C39,40 42,30 45,35 C48,40 51,25 54,30 C57,35 60,20 63,15 C66,10 69,20 72,15 C75,10 78,15 81,10 C84,5 87,15 90,12 C93,10 96,20 100,15" fill="none" stroke="#2189FF" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                    
+                    {/* Hover-only markers for interaction density */}
+                    <g className="chart-interaction-layer">
+                      {[
+                        { cx: 9, cy: 70 }, { cx: 27, cy: 45 }, { cx: 45, cy: 35 }, 
+                        { cx: 63, cy: 15 }, { cx: 81, cy: 10 }, { cx: 100, cy: 15 }
+                      ].map((pt, i) => (
+                        <circle key={i} cx={pt.cx} cy={pt.cy} r="3" fill="#2189FF" className="opacity-0 hover:opacity-100 transition-opacity duration-200 cursor-crosshair" />
+                      ))}
+                    </g>
                   </svg>
                 </div>
-                <div className="absolute left-10 right-2 bottom-0 flex justify-between text-[11px] font-bold text-gray-400 translate-y-full pt-3">
+                <div className="absolute left-10 right-4 bottom-2 flex justify-between text-[10px] font-medium text-gray-400 translate-y-full pt-3">
                   <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
                 </div>
               </div>
@@ -182,12 +193,12 @@ export default function Analytics() {
                 <p className="text-xs font-semibold text-gray-500 mb-8">Breakdown of today&apos;s total usage</p>
                 <div className="relative w-full aspect-square">
                   <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90 drop-shadow-md">
-                    <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#F0F4F8" strokeWidth="6" />
-                    <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#1428A0" strokeWidth="6" strokeDasharray="38 62" strokeDashoffset="0"   className="donut-segment" />
-                    <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#2189FF" strokeWidth="6" strokeDasharray="20 80" strokeDashoffset="-38"  className="donut-segment" />
-                    <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#60A5FA" strokeWidth="6" strokeDasharray="15 85" strokeDashoffset="-58"  className="donut-segment" />
-                    <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#93C5FD" strokeWidth="6" strokeDasharray="12 88" strokeDashoffset="-73"  className="donut-segment" />
-                    <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#BFDBFE" strokeWidth="6" strokeDasharray="15 85" strokeDashoffset="-85"  className="donut-segment" />
+                    <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#F0F4F8" strokeWidth="3" />
+                    <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#1428A0" strokeWidth="3" strokeDasharray="38 62" strokeDashoffset="0"   className="donut-segment" />
+                    <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#2189FF" strokeWidth="3" strokeDasharray="20 80" strokeDashoffset="-38"  className="donut-segment" />
+                    <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#60A5FA" strokeWidth="3" strokeDasharray="15 85" strokeDashoffset="-58"  className="donut-segment" />
+                    <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#93C5FD" strokeWidth="3" strokeDasharray="12 88" strokeDashoffset="-73"  className="donut-segment" />
+                    <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#BFDBFE" strokeWidth="3" strokeDasharray="15 85" strokeDashoffset="-85"  className="donut-segment" />
                   </svg>
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
                     <span className="text-3xl font-extrabold text-gray-900 tracking-tighter">100<span className="text-lg">%</span></span>
@@ -225,15 +236,18 @@ export default function Analytics() {
               </div>
               <div className="relative flex-1 w-full min-h-[220px] pt-4">
                 <div className="absolute inset-0 flex flex-col justify-between pb-8">
-                  <div className="w-full border-b border-gray-100" /><div className="w-full border-b border-gray-100" /><div className="w-full border-b border-gray-100" /><div className="w-full border-b border-gray-200" />
+                  <div className="w-full border-b" style={{ borderColor: '#E8EDF5', borderWidth: '1px' }} />
+                  <div className="w-full border-b" style={{ borderColor: '#E8EDF5', borderWidth: '1px' }} />
+                  <div className="w-full border-b" style={{ borderColor: '#E8EDF5', borderWidth: '1px' }} />
+                  <div className="w-full border-b" style={{ borderColor: '#E8EDF5', borderWidth: '1px' }} />
                 </div>
                 <svg className="w-full h-full overflow-visible relative z-10" preserveAspectRatio="none" viewBox="0 0 100 100">
-                  <rect x="8"  y="60" width="12" height="40" rx="3" fill="#BFDBFE" className="bar-grow" style={{ animationDelay: '0.1s' }} />
-                  <rect x="33" y="15" width="12" height="85" rx="3" fill="#1428A0" className="bar-grow" style={{ animationDelay: '0.2s' }} />
-                  <rect x="58" y="30" width="12" height="70" rx="3" fill="#2189FF" className="bar-grow" style={{ animationDelay: '0.3s' }} />
-                  <rect x="83" y="75" width="12" height="25" rx="3" fill="#93C5FD" className="bar-grow" style={{ animationDelay: '0.4s' }} />
+                  <rect x="8"  y="60" width="12" height="40" rx="4" fill="#BFDBFE" className="bar-grow transition-colors duration-300 hover:fill-[#93C5FD] cursor-pointer" style={{ animationDelay: '0.1s' }} />
+                  <rect x="33" y="15" width="12" height="85" rx="4" fill="#1428A0" className="bar-grow transition-colors duration-300 hover:fill-[#2189FF] cursor-pointer" style={{ animationDelay: '0.2s' }} />
+                  <rect x="58" y="30" width="12" height="70" rx="4" fill="#2189FF" className="bar-grow transition-colors duration-300 hover:fill-[#60A5FA] cursor-pointer" style={{ animationDelay: '0.3s' }} />
+                  <rect x="83" y="75" width="12" height="25" rx="4" fill="#93C5FD" className="bar-grow transition-colors duration-300 hover:fill-[#BFDBFE] cursor-pointer" style={{ animationDelay: '0.4s' }} />
                 </svg>
-                <div className="absolute left-0 right-0 bottom-0 flex justify-around text-[11px] font-bold text-gray-400 translate-y-full pt-3">
+                <div className="absolute left-0 right-0 bottom-0 flex justify-around text-[10px] font-medium text-gray-400 translate-y-full pt-3">
                   <span className="w-12 text-center">Morning</span>
                   <span className="w-12 text-center text-[#1428A0]">Afternoon</span>
                   <span className="w-12 text-center text-[#2189FF]">Evening</span>
