@@ -2,7 +2,7 @@
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import { useEffect, useRef, useCallback } from "react";
+import { Suspense, useEffect, useRef, useCallback } from "react";
 import * as THREE from "three";
 import Apartment from "./Apartment";
 
@@ -85,13 +85,15 @@ export default function Scene({
       <directionalLight position={[8, 12, 10]} intensity={2.5} castShadow />
       <directionalLight position={[-8, 10, -10]} intensity={1.2} />
 
-      <Apartment
-        activeRoom={activeRoom}
-        setActiveRoom={setActiveRoom}
-        ceilingVisible={ceilingVisible}
-        focusMode={focusMode}
-        onCentersLoaded={setRoomCenters}
-      />
+      <Suspense fallback={null}>
+        <Apartment
+          activeRoom={activeRoom}
+          setActiveRoom={setActiveRoom}
+          ceilingVisible={ceilingVisible}
+          focusMode={focusMode}
+          onCentersLoaded={setRoomCenters}
+        />
+      </Suspense>
 
       <CameraController
         activeRoom={activeRoom}
