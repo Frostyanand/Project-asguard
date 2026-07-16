@@ -118,7 +118,16 @@ body {
 @keyframes drawDonut {
   from { stroke-dasharray: 0 100; }
 }
-.donut-segment { animation: drawDonut 1.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.donut-segment { 
+  animation: drawDonut 1.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; 
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+}
+.donut-segment:hover {
+  stroke-width: 4px;
+}
+
+
 
 /* Pulse ring (Dashboard) */
 @keyframes pulseRing {

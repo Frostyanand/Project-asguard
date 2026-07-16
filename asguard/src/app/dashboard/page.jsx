@@ -171,27 +171,40 @@ export default function Dashboard() {
                 </select>
               </div>
 
-              <div className="relative flex-1 w-full min-h-[240px] pt-2">
-                <div className="absolute left-0 top-0 bottom-8 flex flex-col justify-between text-[12px] font-bold text-gray-400 w-10">
+              <div className="relative flex-1 w-full min-h-[240px] pt-8 pb-4">
+                <div className="absolute left-0 top-6 bottom-12 flex flex-col justify-between text-[10px] font-medium text-gray-400 w-10">
                   <span>30k</span><span>20k</span><span>10k</span><span>0</span>
                 </div>
-                <div className="absolute left-14 right-2 top-2 bottom-8">
+                <div className="absolute left-14 right-4 top-8 bottom-12">
                   <div className="absolute inset-0 flex flex-col justify-between">
-                    <div className="w-full border-b border-gray-100" /><div className="w-full border-b border-gray-100" /><div className="w-full border-b border-gray-100" /><div className="w-full border-b border-gray-200" />
+                    <div className="w-full border-b" style={{ borderColor: '#E8EDF5', borderWidth: '1px' }} />
+                    <div className="w-full border-b" style={{ borderColor: '#E8EDF5', borderWidth: '1px' }} />
+                    <div className="w-full border-b" style={{ borderColor: '#E8EDF5', borderWidth: '1px' }} />
+                    <div className="w-full border-b" style={{ borderColor: '#E8EDF5', borderWidth: '1px' }} />
                   </div>
                   <svg className="w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 100">
                     <defs>
                       <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#2189FF" stopOpacity="0.2" />
+                        <stop offset="0%" stopColor="#2189FF" stopOpacity="0.05" />
                         <stop offset="100%" stopColor="#2189FF" stopOpacity="0" />
                       </linearGradient>
                     </defs>
-                    <path className="chart-fill" d="M0,80 C15,60 25,75 40,40 C55,5 70,45 85,30 C95,20 100,10 100,10 L100,100 L0,100 Z" fill="url(#chartGradient)" />
-                    <path className="chart-line" d="M0,80 C15,60 25,75 40,40 C55,5 70,45 85,30 C95,20 100,10 100,10" fill="none" stroke="#2189FF" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
-                    <circle cx="85" cy="30" r="4" fill="#FFFFFF" stroke="#1428A0" strokeWidth="2.5" />
+                    <path className="chart-fill" d="M0,75 C2,70 4,80 6,75 C8,70 10,65 12,68 C14,70 16,55 18,50 C20,45 22,50 24,45 C26,40 28,30 30,35 C32,40 34,42 36,38 C38,34 40,25 42,28 C44,30 46,20 48,15 C50,10 52,15 54,12 C56,10 58,18 60,20 C62,22 64,15 66,12 C68,10 70,25 72,28 C74,30 76,20 78,15 C80,10 82,18 84,20 C86,22 88,30 90,25 C92,20 94,15 96,12 C98,10 99,15 100,10 L100,100 L0,100 Z" fill="url(#chartGradient)" />
+                    <path className="chart-line" d="M0,75 C2,70 4,80 6,75 C8,70 10,65 12,68 C14,70 16,55 18,50 C20,45 22,50 24,45 C26,40 28,30 30,35 C32,40 34,42 36,38 C38,34 40,25 42,28 C44,30 46,20 48,15 C50,10 52,15 54,12 C56,10 58,18 60,20 C62,22 64,15 66,12 C68,10 70,25 72,28 C74,30 76,20 78,15 C80,10 82,18 84,20 C86,22 88,30 90,25 C92,20 94,15 96,12 C98,10 99,15 100,10" fill="none" stroke="#2189FF" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                    
+                    {/* Hover-only markers for interaction density */}
+                    <g className="chart-interaction-layer">
+                      {[
+                        { cx: 12, cy: 68 }, { cx: 24, cy: 45 }, { cx: 36, cy: 38 }, 
+                        { cx: 48, cy: 15 }, { cx: 60, cy: 20 }, { cx: 72, cy: 28 }, 
+                        { cx: 84, cy: 20 }, { cx: 96, cy: 12 }
+                      ].map((pt, i) => (
+                        <circle key={i} cx={pt.cx} cy={pt.cy} r="3" fill="#2189FF" className="opacity-0 hover:opacity-100 transition-opacity duration-200 cursor-crosshair" />
+                      ))}
+                    </g>
                   </svg>
                 </div>
-                <div className="absolute left-14 right-2 bottom-0 flex justify-between text-[12px] font-bold text-gray-400">
+                <div className="absolute left-14 right-4 bottom-2 flex justify-between text-[10px] font-medium text-gray-400">
                   <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
                 </div>
               </div>

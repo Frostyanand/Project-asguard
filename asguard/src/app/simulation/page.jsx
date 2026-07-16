@@ -96,9 +96,26 @@ export default function Simulation() {
 
               <div className="mt-8 pt-8 border-t border-gray-100">
                 <h3 className="font-bold text-xl mb-6 text-gray-900">Energy Prediction Graph</h3>
-                <svg className="w-full h-48 overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 40">
-                  <path d="M0,35 C20,30 40,10 60,15 C80,20 100,5" fill="none" stroke="#2189FF" strokeWidth="3" className="chart-line" />
-                  <path d="M0,38 C20,35 40,20 60,25 C80,30 100,20" fill="none" stroke="#CBD5E1" strokeWidth="3" strokeDasharray="4" />
+                <svg className="w-full h-48 overflow-visible relative z-10" preserveAspectRatio="none" viewBox="0 0 100 40">
+                  <defs>
+                    <linearGradient id="simGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#2189FF" stopOpacity="0.05" />
+                      <stop offset="100%" stopColor="#2189FF" stopOpacity="0" />
+                    </linearGradient>
+                  </defs>
+                  <path className="chart-fill" d="M0,35 C5,32 10,38 15,30 C20,25 25,28 30,22 C35,18 40,25 45,20 C50,15 55,18 60,12 C65,10 70,15 75,8 C80,5 85,10 90,6 C95,4 98,6 100,4 L100,40 L0,40 Z" fill="url(#simGradient)" />
+                  <path d="M0,35 C5,32 10,38 15,30 C20,25 25,28 30,22 C35,18 40,25 45,20 C50,15 55,18 60,12 C65,10 70,15 75,8 C80,5 85,10 90,6 C95,4 98,6 100,4" fill="none" stroke="#2189FF" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" className="chart-line" />
+                  <path d="M0,38 C5,35 10,40 15,33 C20,28 25,32 30,25 C35,22 40,28 45,23 C50,18 55,22 60,16 C65,14 70,18 75,12 C80,10 85,14 90,10 C95,8 98,10 100,8" fill="none" stroke="#94A3B8" strokeWidth="1" strokeDasharray="4" strokeLinecap="round" />
+                  
+                  {/* Hover-only markers for interaction density */}
+                  <g className="chart-interaction-layer">
+                    {[
+                      { cx: 15, cy: 30 }, { cx: 30, cy: 22 }, { cx: 45, cy: 20 }, 
+                      { cx: 60, cy: 12 }, { cx: 75, cy: 8 }, { cx: 90, cy: 6 }
+                    ].map((pt, i) => (
+                      <circle key={i} cx={pt.cx} cy={pt.cy} r="2.5" fill="#2189FF" className="opacity-0 hover:opacity-100 transition-opacity duration-200 cursor-crosshair" />
+                    ))}
+                  </g>
                 </svg>
                 <div className="flex items-center gap-6 mt-4">
                   <div className="flex items-center gap-2"><div className="w-4 h-1 bg-[#2189FF] rounded-full" /><span className="text-xs font-semibold text-gray-600">With Optimization</span></div>
