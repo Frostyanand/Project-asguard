@@ -11,7 +11,7 @@ import {
   createUserProfile,
   updateUserProfile,
 } from "../firebase/authService";
-
+//  
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
@@ -127,7 +127,7 @@ export const AuthProvider = ({ children }) => {
       console.log("[Registration Audit Context] Starting registerWithEmailPassword for:", email);
       const user = await signUpWithEmail(email, password, displayName);
       console.log("[Registration Audit Context] User created in Auth. Returned UID:", user.uid);
-      
+
       const profile = await createUserProfile(user, displayName);
       console.log("[Registration Audit Context] User Profile created for UID:", user.uid);
       setCurrentUser(profile);
