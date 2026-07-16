@@ -2,10 +2,13 @@
 
 import { useSimulation } from '../context/SimulationContext';
 import { Play, Pause, FastForward, Activity } from 'lucide-react';
+import { usePathname } from 'next/navigation';
 
 export default function SimulationPlayer() {
   const sim = useSimulation();
+  const pathname = usePathname();
 
+  if (pathname === '/ai-assistant') return null;
   if (!sim || sim.allLogs.length === 0 || sim.isLoading) return null;
 
   const {
