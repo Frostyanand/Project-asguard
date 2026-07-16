@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../../context/AuthContext'
 import { useSimulation } from '../../context/SimulationContext'
@@ -180,15 +180,21 @@ export default function DigitalTwin() {
     }
   }, [activeRoom])
 
+  const previousTwinStateRef = useRef("");
+
   // Derive Twin State from Simulation Engine
   useEffect(() => {
     if (!sim || sim.isLoading || authLoading) return;
     setLoading(false);
     
     if (sim.currentLogs.length === 0) {
-      setRoomList([{ id: 'all', label: 'Entire Apartment', letter: 'ALL', icon: Home }])
-      setDevicesData({ all: [] })
-      setRoomNamesMap({ all: 'Entire Apartment' })
+      const emptyState = "EMPTY";
+      if (previousTwinStateRef.current !== emptyState) {
+        setRoomList([{ id: 'all', label: 'Entire Apartment', letter: 'ALL', icon: Home }])
+        setDevicesData({ all: [] })
+        setRoomNamesMap({ all: 'Entire Apartment' })
+        previousTwinStateRef.current = emptyState;
+      }
       return
     }
 
@@ -196,6 +202,13 @@ export default function DigitalTwin() {
       const latestLogs = getLatestSimulatedStates(sim.currentLogs);
       
       if (latestLogs.length === 0) return;
+
+      const twinStateStr = JSON.stringify(latestLogs);
+      if (previousTwinStateRef.current === twinStateStr) {
+        // No devices changed state. Skip heavy React re-render.
+        return;
+      }
+      previousTwinStateRef.current = twinStateStr;
 
       const uniqueRooms = getUniqueRooms(latestLogs)
       const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']

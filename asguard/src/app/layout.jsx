@@ -1,5 +1,6 @@
 import './globals.css'
 import { AuthProvider } from '../context/AuthContext'
+import { SimulationProvider } from '../context/SimulationContext'
 
 export const metadata = {
   title: 'ASGUARD — AI Smart Guardian',
@@ -11,7 +12,9 @@ export default function RootLayout({ children }) {
     <html lang="en">
       <body>
         <AuthProvider>
-          {children}
+          <SimulationProvider>
+            {children}
+          </SimulationProvider>
         </AuthProvider>
       </body>
     </html>
