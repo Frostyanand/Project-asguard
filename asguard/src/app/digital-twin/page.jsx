@@ -3,9 +3,10 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../../context/AuthContext'
+import { useSimulation } from '../../context/SimulationContext'
+import { getLatestSimulatedStates } from '../../services/simulationMetrics'
 import {
   fetchUserProfile,
-  fetchLatestDeviceStates,
   getUniqueRooms,
   getRoomIcon,
   getApplianceIcon,
@@ -143,7 +144,7 @@ function DeviceCard({ icon: Icon, name, status, power, consumption }) {
       </div>
       {consumption != null && (
         <div className="flex items-center justify-between pt-4 border-t border-gray-100/80 mt-1">
-          <span className="text-[11px] font-bold uppercase tracking-widest text-gray-400">Today&apos;s Consumption</span>
+          <span className="text-[11px] font-bold uppercase tracking-widest text-gray-400">Total Consumption</span>
           <span className="text-sm font-bold text-[#1428A0] bg-blue-50/50 px-2.5 py-1 rounded-md">{consumption}</span>
         </div>
       )}
@@ -168,6 +169,7 @@ export default function DigitalTwin() {
 
   const router = useRouter()
   const { currentUser, loading: authLoading } = useAuth()
+  const sim = useSimulation()
 
   // Auto-traverse: when a specific room is selected, go interior. When 'all', go aerial.
   useEffect(() => {
@@ -178,99 +180,79 @@ export default function DigitalTwin() {
     }
   }, [activeRoom])
 
+  // Derive Twin State from Simulation Engine
   useEffect(() => {
-    let isMounted = true
-
-    async function fetchTwinData() {
-      if (!currentUser?.uid) {
-        if (isMounted) setLoading(false)
-        return
-      }
-      setLoading(true)
-      setError(null)
-
-      try {
-        const userProfile = await fetchUserProfile(currentUser.uid)
-        const houseId = (userProfile?.house_id || userProfile?.houseId || 'HOUSE001')
-
-        // Fetch latest state per device — minimal query
-        const latestLogs = await fetchLatestDeviceStates(houseId)
-
-        if (!isMounted) return
-
-        if (latestLogs.length === 0) {
-          setRoomList([{ id: 'all', label: 'Entire Apartment', letter: 'ALL', icon: Home }])
-          setDevicesData({ all: [] })
-          setRoomNamesMap({ all: 'Entire Apartment' })
-          setLoading(false)
-          return
-        }
-
-        // Build unique rooms sorted alphabetically — map to letters A, B, C...
-        const uniqueRooms = getUniqueRooms(latestLogs)
-        const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
-
-        const namesMap = { all: 'Entire Apartment' }
-        const builtRoomList = [
-          { id: 'all', label: 'Entire Apartment', letter: 'ALL', icon: Home }
-        ]
-
-        uniqueRooms.forEach((room, index) => {
-          const letter = LETTERS[index] || String.fromCharCode(65 + index)
-          namesMap[letter] = room.roomName
-          builtRoomList.push({
-            id: letter,
-            label: room.roomName,
-            letter,
-            icon: resolveRoomIcon(room.roomType),
-          })
-        })
-
-        // Build devicesData map: 'all' + per-letter room
-        const builtDevicesData = { all: [] }
-        for (const letter of Object.keys(namesMap)) {
-          if (letter !== 'all') builtDevicesData[letter] = []
-        }
-
-        for (const log of latestLogs) {
-          const DevIcon = resolveApplianceIcon(log.appliance_type)
-          const kwh = Number(log.energy_kwh) || 0
-          const deviceEntry = {
-            icon: DevIcon,
-            name: log.appliance_name || log.appliance_id || 'Unknown Device',
-            status: log.status === 'ON' ? 'ON' : 'OFF',
-            power: log.status === 'ON' ? 'ON' : 'OFF',
-            consumption: kwh > 0 ? `${kwh.toFixed(2)} kWh` : null,
-          }
-
-          builtDevicesData.all.push(deviceEntry)
-
-          // Find the letter for this room
-          const roomEntry = uniqueRooms.findIndex((r) => r.roomName === log.room_name)
-          if (roomEntry !== -1) {
-            const letter = LETTERS[roomEntry] || String.fromCharCode(65 + roomEntry)
-            if (builtDevicesData[letter]) {
-              builtDevicesData[letter].push(deviceEntry)
-            }
-          }
-        }
-
-        setRoomNamesMap(namesMap)
-        setRoomList(builtRoomList)
-        setDevicesData(builtDevicesData)
-        setLoading(false)
-      } catch (err) {
-        console.error('Digital Twin fetch error:', err)
-        if (isMounted) {
-          setError(`Failed to load Digital Twin data: ${err.message}`)
-          setLoading(false)
-        }
-      }
+    if (!sim || sim.isLoading || authLoading) return;
+    setLoading(false);
+    
+    if (sim.currentLogs.length === 0) {
+      setRoomList([{ id: 'all', label: 'Entire Apartment', letter: 'ALL', icon: Home }])
+      setDevicesData({ all: [] })
+      setRoomNamesMap({ all: 'Entire Apartment' })
+      return
     }
 
-    fetchTwinData()
-    return () => { isMounted = false }
-  }, [currentUser?.uid])
+    try {
+      const latestLogs = getLatestSimulatedStates(sim.currentLogs);
+      
+      if (latestLogs.length === 0) return;
+
+      const uniqueRooms = getUniqueRooms(latestLogs)
+      const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
+
+      const namesMap = { all: 'Entire Apartment' }
+      const builtRoomList = [
+        { id: 'all', label: 'Entire Apartment', letter: 'ALL', icon: Home }
+      ]
+
+      uniqueRooms.forEach((room, index) => {
+        const letter = LETTERS[index] || String.fromCharCode(65 + index)
+        namesMap[letter] = room.roomName
+        builtRoomList.push({
+          id: letter,
+          label: room.roomName,
+          letter,
+          icon: resolveRoomIcon(room.roomType),
+        })
+      })
+
+      const builtDevicesData = { all: [] }
+      for (const letter of Object.keys(namesMap)) {
+        if (letter !== 'all') builtDevicesData[letter] = []
+      }
+
+      for (const log of latestLogs) {
+        const DevIcon = resolveApplianceIcon(log.appliance_type)
+        const kwh = Number(log.energy_kwh) || 0
+        const deviceEntry = {
+          icon: DevIcon,
+          name: log.appliance_name || log.appliance_id || 'Unknown Device',
+          status: log.status === 'ON' ? 'ON' : 'OFF',
+          power: log.status === 'ON' ? 'ON' : 'OFF',
+          consumption: kwh > 0 ? `${kwh.toFixed(2)} kWh` : null,
+        }
+
+        builtDevicesData.all.push(deviceEntry)
+
+        const roomEntry = uniqueRooms.findIndex((r) => r.roomName === log.room_name)
+        if (roomEntry !== -1) {
+          const letter = LETTERS[roomEntry] || String.fromCharCode(65 + roomEntry)
+          if (builtDevicesData[letter]) {
+            builtDevicesData[letter].push(deviceEntry)
+          }
+        }
+      }
+
+      setRoomNamesMap(namesMap)
+      setRoomList(builtRoomList)
+      setDevicesData(builtDevicesData)
+      
+    } catch (err) {
+      console.error(err)
+      setError(err.message)
+    }
+
+  }, [sim?.virtualTime, sim?.currentLogs, sim?.isLoading, authLoading])
 
   const activeDevices = devicesData[activeRoom] || devicesData.all || []
 
@@ -381,7 +363,7 @@ export default function DigitalTwin() {
         </div>
 
         {/* ── BOTTOM CENTER: Perspective toggle + info ─────────────────── */}
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 pointer-events-auto">
+        <div className="absolute bottom-32 left-1/2 -translate-x-1/2 z-20 pointer-events-auto">
           <div className="bg-black/50 backdrop-blur-xl px-5 py-3 rounded-2xl border border-white/10 flex items-center gap-4">
             {activeRoom !== 'all' && (
               <>
@@ -439,7 +421,7 @@ export default function DigitalTwin() {
           {rightPanelOpen ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
         </button>
 
-        <div className={`absolute top-4 right-0 bottom-4 w-[340px] z-20 transition-transform duration-300 ease-in-out ${rightPanelOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+        <div className={`absolute top-4 right-0 bottom-32 w-[340px] z-20 transition-transform duration-300 ease-in-out ${rightPanelOpen ? 'translate-x-0' : 'translate-x-full'}`}>
           <div className="bg-black/50 backdrop-blur-xl p-5 rounded-l-[24px] border border-r-0 border-white/10 h-full flex flex-col overflow-hidden pointer-events-auto">
             <div className="flex items-center justify-between mb-4 px-1">
               <h3 className="text-xs font-bold tracking-widest uppercase text-white/50">Connected Devices</h3>
@@ -476,7 +458,7 @@ export default function DigitalTwin() {
         {/* Floating AI Button */}
         <button
           onClick={() => router.push('/ai-assistant')}
-          className="absolute bottom-6 right-6 z-30 bg-gradient-to-r from-[#1428A0] to-[#2189FF] text-white pl-4 pr-5 py-3 rounded-full shadow-[0_8px_30px_rgba(33,137,255,0.4)] hover:shadow-[0_12px_40px_rgba(33,137,255,0.6)] hover:-translate-y-1 transition-all duration-300 flex items-center gap-2.5 font-bold text-[13px] group ring-2 ring-white/20"
+          className="absolute bottom-32 right-6 z-30 bg-gradient-to-r from-[#1428A0] to-[#2189FF] text-white pl-4 pr-5 py-3 rounded-full shadow-[0_8px_30px_rgba(33,137,255,0.4)] hover:shadow-[0_12px_40px_rgba(33,137,255,0.6)] hover:-translate-y-1 transition-all duration-300 flex items-center gap-2.5 font-bold text-[13px] group ring-2 ring-white/20"
         >
           <div className="bg-white/20 p-2 rounded-full backdrop-blur-sm group-hover:scale-110 transition-transform">
             <Sparkles size={16} className="text-white fill-white" />

@@ -3,14 +3,12 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../../context/AuthContext'
+import { useSimulation } from '../../context/SimulationContext'
+import { deriveSimulationLogs } from '../../services/simulationMetrics'
 import {
   fetchUserProfile,
-  fetchLogCount,
-  fetchTodayLogs,
-  fetchWeeklyLogs,
   getDashboardMetrics,
   generateRecommendations,
-  getUniqueDevices,
 } from '../../firebase/firestoreService'
 import {
   Zap,
@@ -65,6 +63,7 @@ function QuickActionCard({ icon: Icon, label, onClick }) {
 export default function Dashboard() {
   const router = useRouter()
   const { currentUser, loading: authLoading } = useAuth()
+  const sim = useSimulation()
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -80,76 +79,51 @@ export default function Dashboard() {
     recommendation: null,
   })
 
+  // Load house name on mount
   useEffect(() => {
     let isMounted = true
-
-    async function fetchDashboardData() {
-      if (!currentUser?.uid) {
-        if (isMounted) setLoading(false)
-        return
-      }
-
-      setLoading(true)
-      setError(null)
-
+    async function loadUser() {
+      if (!currentUser?.uid) return
       try {
-        // Step 1: Read user profile
         const userProfile = await fetchUserProfile(currentUser.uid)
-
-        if (!userProfile) {
-          if (isMounted) {
-            setError(`User document not found in Firestore.`)
-            setLoading(false)
-          }
-          return
-        }
-
-        if (isMounted) {
+        if (isMounted && userProfile) {
           setHouseName(userProfile.houseName || '')
         }
-
-        const houseId = userProfile.house_id || userProfile.houseId || 'HOUSE001'
-
-        // Step 2: Parallel fetch — log count + today's logs + weekly logs
-        const [totalLogCount, todayLogs, weeklyLogs] = await Promise.all([
-          fetchLogCount(houseId),
-          fetchTodayLogs(houseId),
-          fetchWeeklyLogs(houseId),
-        ])
-
-        // Step 3: Compute dashboard metrics
-        const dashMetrics = getDashboardMetrics(todayLogs, weeklyLogs, totalLogCount)
-
-        // Step 4: Generate recommendation from weekly logs
-        const recs = generateRecommendations(weeklyLogs)
-
-        if (isMounted) {
-          setMetrics({
-            ...dashMetrics,
-            recommendation: recs.mainRecommendation
-              ? {
-                  text: `Your ${recs.mainRecommendation.applianceName} contributed ${recs.mainRecommendation.percent}% of recent energy usage. ${recs.mainRecommendation.actionText}`,
-                  saving: recs.estimatedMonthlySaving > 0 ? `₹${recs.estimatedMonthlySaving}` : null,
-                }
-              : null,
-          })
-          setLoading(false)
-        }
       } catch (err) {
-        console.error('Error fetching dashboard metrics:', err)
-        if (isMounted) {
-          setError(`Failed to load dashboard: ${err.message}`)
-          setLoading(false)
-        }
+        console.error(err)
       }
     }
-
-    fetchDashboardData()
-
-    return () => {
-      isMounted = false
-    }
+    loadUser()
+    return () => { isMounted = false }
   }, [currentUser?.uid])
+
+  // Derive metrics purely from simulation loop
+  useEffect(() => {
+    if (!sim || sim.isLoading || authLoading) return;
+    
+    // Once simulation data is available, stop showing the full page loader
+    setLoading(false);
+
+    if (sim.currentLogs.length === 0) return;
+
+    // Use the bridge to get today, weekly, and log count from the in-memory array
+    const { todayLogs, weeklyLogs, totalLogCount } = deriveSimulationLogs(sim.currentLogs, sim.virtualTime);
+
+    // Feed to the existing metric engines
+    const dashMetrics = getDashboardMetrics(todayLogs, weeklyLogs, totalLogCount);
+    const recs = generateRecommendations(weeklyLogs);
+
+    setMetrics({
+      ...dashMetrics,
+      totalLogs: totalLogCount, // update to show current total simulated
+      recommendation: recs.mainRecommendation
+        ? {
+            text: `Your ${recs.mainRecommendation.applianceName} contributed ${recs.mainRecommendation.percent}% of recent energy usage. ${recs.mainRecommendation.actionText}`,
+            saving: recs.estimatedMonthlySaving > 0 ? `₹${recs.estimatedMonthlySaving}` : null,
+          }
+        : null,
+    })
+  }, [sim?.virtualTime, sim?.currentLogs, sim?.isLoading, authLoading])
 
   if (authLoading || loading) {
     return (
@@ -189,8 +163,8 @@ export default function Dashboard() {
       />
 
       {/* Scrollable Dashboard Area */}
-      <div className="flex-1 overflow-y-auto px-6 lg:px-10 pb-16 scroll-smooth">
-        <div className="max-w-[1400px] mx-auto space-y-6 lg:space-y-8">
+      <div className="flex-1 overflow-y-auto px-6 lg:px-10 pb-24 scroll-smooth">
+        <div className="max-w-[1400px] mx-auto space-y-6 lg:space-y-8 mt-6">
           
           {error && (
             <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm font-semibold flex items-center gap-3">
@@ -216,14 +190,14 @@ export default function Dashboard() {
 
               <div className="relative z-10">
                 <div className="flex items-center gap-3 mb-6">
-                  <h3 className="text-[13px] font-bold tracking-widest uppercase text-gray-500">Digital Twin & Firebase Status</h3>
+                  <h3 className="text-[13px] font-bold tracking-widest uppercase text-gray-500">Live Postgres Pipeline Status</h3>
                   <span className="bg-green-50 border border-green-200 text-green-700 px-3 py-1 rounded-full text-[11px] font-bold tracking-wide flex items-center gap-1.5 shadow-sm">
                     <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                    LIVE SYNCED
+                    SIMULATION STREAM ACTIVE
                   </span>
                 </div>
                 <h2 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4 tracking-tight leading-tight">
-                  Your smart home is live and synchronized with Firestore.
+                  Your smart home is live and synchronized with PostgreSQL.
                 </h2>
                 <p className="text-gray-500 font-semibold flex items-center gap-2 mb-10">
                   <CheckCircle2 size={18} className="text-[#2189FF]" />
@@ -281,9 +255,9 @@ export default function Dashboard() {
 
           {/* Row 2: Stats */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8 items-stretch">
-            <StatCard icon={Wifi}     label="Connected Devices"   value={`${metrics.connectedDevices}`} subtext="From Energy Logs" colorClass="text-[#2189FF]"    bgClass="bg-[#2189FF]/10" />
+            <StatCard icon={Wifi}     label="Connected Devices"   value={`${metrics.connectedDevices}`} subtext="From Live Stream" colorClass="text-[#2189FF]"    bgClass="bg-[#2189FF]/10" />
             <StatCard icon={Power}    label="Daily Household Energy" value={`${metrics.todayUsageKwh} kWh`} subtext={`₹${metrics.todayCost.toFixed(2)} today`} colorClass="text-orange-500"   bgClass="bg-orange-50" />
-            <StatCard icon={Settings} label="Cloud Energy Logs"    value={`${metrics.totalLogs.toLocaleString()}`} subtext="Firestore Records" colorClass="text-purple-500"  bgClass="bg-purple-50" />
+            <StatCard icon={Settings} label="Streamed Telemetry"    value={`${metrics.totalLogs.toLocaleString()}`} subtext="Postgres Records" colorClass="text-purple-500"  bgClass="bg-purple-50" />
             <StatCard icon={Activity} label="Efficiency Score"    value={`${metrics.efficiencyScore}/100`} subtext="Based on anomaly ratio" colorClass="text-green-500"   bgClass="bg-green-50" />
           </div>
 
@@ -307,7 +281,7 @@ export default function Dashboard() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-10 gap-4">
                 <div>
                   <h3 className="text-xl font-bold text-gray-900 tracking-tight">Weekly Energy Usage</h3>
-                  <p className="text-sm font-semibold text-gray-500 mt-1.5">Live consumption trend from Firestore telemetry</p>
+                  <p className="text-sm font-semibold text-gray-500 mt-1.5">Live consumption trend from Postgres telemetry stream</p>
                 </div>
               </div>
 
@@ -323,7 +297,7 @@ export default function Dashboard() {
                     <div className="w-full border-b border-gray-200" />
                   </div>
                   {metrics.chartData.length > 0 ? (
-                    <svg className="w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 100">
+                    <svg className="w-full h-full overflow-visible relative z-10" preserveAspectRatio="none" viewBox="0 0 100 100">
                       <defs>
                         <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="0%" stopColor="#2189FF" stopOpacity="0.05" />
@@ -348,8 +322,8 @@ export default function Dashboard() {
                       </g>
                     </svg>
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-sm font-semibold text-gray-400">
-                      No energy logs available.
+                    <div className="w-full h-full flex items-center justify-center text-sm font-semibold text-gray-400 relative z-10">
+                      No energy logs available. Fast-forward the simulation to ingest logs.
                     </div>
                   )}
                 </div>
@@ -363,12 +337,12 @@ export default function Dashboard() {
 
             {/* Activity Timeline */}
             <div className="lg:col-span-4 bg-white rounded-[24px] p-8 lg:p-10 premium-shadow ring-1 ring-gray-100/50 h-full">
-              <h3 className="text-xl font-bold text-gray-900 tracking-tight mb-8">Firestore Activity</h3>
+              <h3 className="text-xl font-bold text-gray-900 tracking-tight mb-8">System Activity</h3>
               <div className="relative pl-7 space-y-9">
                 <div className="absolute left-[13px] top-2 bottom-2 w-[2px] bg-gray-100" />
                 {[
-                  { label: 'Firebase User Session Active', time: currentUser?.email || 'Authenticated', active: true },
-                  { label: 'Cloud Telemetry Streamed', time: `${metrics.totalLogs.toLocaleString()} Firestore Records`, active: true },
+                  { label: 'User Session Active', time: currentUser?.email || 'Authenticated', active: true },
+                  { label: 'Live Telemetry Streamed', time: `${metrics.totalLogs.toLocaleString()} Postgres Records`, active: true },
                   { label: 'Energy Analysis Complete', time: `${metrics.connectedDevices} Devices Tracked`, active: false },
                   { label: 'SmartThings Digital Twin Ready', time: houseName ? `${houseName} Model Live` : 'Model Live', active: false },
                 ].map((item, idx) => (

@@ -1,0 +1,94 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// 1. User Profile
+model User {
+  id            String   @id // Maps to Firebase UID
+  email         String   @unique
+  name          String
+  photoURL      String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  houses        House[]
+}
+
+// 2. House Configuration
+model House {
+  id            String   @id @default(cuid()) // e.g. HOUSE001
+  ownerId       String
+  name          String
+  location      String
+  climate       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  owner         User        @relation(fields: [ownerId], references: [id])
+  rooms         Room[]
+  logs          EnergyLog[]
+}
+
+// 3. Rooms within a House
+model Room {
+  id            String   @id // e.g. ROOM001
+  houseId       String
+  name          String   // e.g. "Living Room"
+  type          String   // e.g. "living_room"
+
+  house         House       @relation(fields: [houseId], references: [id])
+  appliances    Appliance[]
+  logs          EnergyLog[]
+}
+
+// 4. Appliances within a Room
+model Appliance {
+  id            String   @id // e.g. LR_AC_001
+  roomId        String
+  name          String   // e.g. "Samsung WindFree AC"
+  type          String   // e.g. "ac"
+  manufacturer  String
+  ratedPower    Float    // in watts
+
+  room          Room        @relation(fields: [roomId], references: [id])
+  logs          EnergyLog[]
+}
+
+// 5. Time-Series Telemetry (The core dataset)
+model EnergyLog {
+  id                  String   @id @default(cuid())
+  timestamp           DateTime
+  date                String   // e.g. "2026-06-01"
+  hour                Int
+  dayOfWeek           String
+  isWeekend           Boolean
+
+  houseId             String
+  roomId              String
+  applianceId         String
+
+  status              String   // "ON" / "OFF"
+  runtimeMinutes      Int
+  powerConsumptionWh  Float
+  energyKwh           Float
+  electricityCost     Float
+
+  occupancy           Boolean
+  ambientTemperature  Float
+  weather             String
+  tariffType          String
+  dailyLimitKwh       Float
+  thresholdExceeded   Boolean
+  aiFlag              String   // e.g. "Normal" / "Anomaly"
+
+  house               House     @relation(fields: [houseId], references: [id])
+  room                Room      @relation(fields: [roomId], references: [id])
+  appliance           Appliance @relation(fields: [applianceId], references: [id])
+
+  @@index([houseId, timestamp])
+  @@index([houseId, date])
+}

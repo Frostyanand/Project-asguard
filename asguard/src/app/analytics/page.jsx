@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
+import { useSimulation } from '../../context/SimulationContext'
+import { deriveSimulationLogs } from '../../services/simulationMetrics'
 import {
   fetchUserProfile,
   fetchWeeklyLogs,
@@ -81,49 +83,21 @@ function InsightItem({ icon: Icon, title, value, subtitle, iconColor, iconBg }) 
 // ── Analytics Page ─────────────────────────────────────────────────────────────
 export default function Analytics() {
   const { currentUser, loading: authLoading } = useAuth()
+  const sim = useSimulation()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [metrics, setMetrics] = useState(null)
 
   useEffect(() => {
-    let isMounted = true
+    if (!sim || sim.isLoading || authLoading) return;
+    setLoading(false);
 
-    async function fetchAnalyticsData() {
-      if (!currentUser?.uid) {
-        if (isMounted) setLoading(false)
-        return
-      }
-      setLoading(true)
-      setError(null)
+    if (sim.currentLogs.length === 0) return;
 
-      try {
-        const userProfile = await fetchUserProfile(currentUser.uid)
-        const houseId = userProfile?.house_id || userProfile?.houseId || 'HOUSE001'
-
-        const refDateInfo = await getDatasetReferenceDate(houseId)
-        // Parallel fetch: weekly + monthly logs
-        const [weeklyLogs, monthlyLogs] = await Promise.all([
-          fetchWeeklyLogs(houseId),
-          fetchMonthlyLogs(houseId),
-        ])
-
-        const computed = getAnalyticsMetrics(weeklyLogs, monthlyLogs, refDateInfo)
-        if (isMounted) {
-          setMetrics(computed)
-          setLoading(false)
-        }
-      } catch (err) {
-        console.error('Analytics fetch error:', err)
-        if (isMounted) {
-          setError(`Failed to load analytics: ${err.message}`)
-          setLoading(false)
-        }
-      }
-    }
-
-    fetchAnalyticsData()
-    return () => { isMounted = false }
-  }, [currentUser?.uid])
+    const { weeklyLogs, monthlyLogs, refDateInfo } = deriveSimulationLogs(sim.currentLogs, sim.virtualTime);
+    const computed = getAnalyticsMetrics(weeklyLogs, monthlyLogs, refDateInfo);
+    setMetrics(computed);
+  }, [sim?.virtualTime, sim?.currentLogs, sim?.isLoading, authLoading]);
 
   const analyticsBadge = (
     <div className="bg-blue-100 text-[#2189FF] p-1.5 rounded-lg shadow-sm">

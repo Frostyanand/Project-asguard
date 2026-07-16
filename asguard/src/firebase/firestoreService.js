@@ -19,6 +19,15 @@ const CARBON_FACTOR_KG_PER_KWH = 0.82; // India CEA grid emission factor
 // Cache for Dataset Reference Date
 let cachedReferenceDate = null;
 
+// Query Cache to prevent massive Firebase reads on navigation/re-mounts
+const queryCache = {
+  todayLogs: { data: null, timestamp: 0 },
+  weeklyLogs: { data: null, timestamp: 0 },
+  monthlyLogs: { data: null, timestamp: 0 },
+  latestDeviceStates: { data: null, timestamp: 0 },
+};
+const CACHE_DURATION_MS = 2 * 60 * 1000; // 2 minutes caching
+
 // ─── Icon Type Mapping Helpers ────────────────────────────────────────────────
 
 export function getRoomIcon(roomType) {
@@ -178,6 +187,10 @@ export async function fetchLogCount(houseId) {
  */
 export async function fetchTodayLogs(houseId) {
   if (!isFirebaseConfigured || !db || !houseId) return [];
+  const now = Date.now();
+  if (queryCache.todayLogs.data && (now - queryCache.todayLogs.timestamp < CACHE_DURATION_MS)) {
+    return queryCache.todayLogs.data;
+  }
   try {
     const ref = await getDatasetReferenceDate(houseId);
     const q = query(
@@ -186,7 +199,9 @@ export async function fetchTodayLogs(houseId) {
       where("date", "==", ref.referenceDate)
     );
     const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    queryCache.todayLogs = { data, timestamp: now };
+    return data;
   } catch (err) {
     console.warn("fetchTodayLogs error:", err.message);
     return [];
@@ -198,6 +213,10 @@ export async function fetchTodayLogs(houseId) {
  */
 export async function fetchWeeklyLogs(houseId) {
   if (!isFirebaseConfigured || !db || !houseId) return [];
+  const now = Date.now();
+  if (queryCache.weeklyLogs.data && (now - queryCache.weeklyLogs.timestamp < CACHE_DURATION_MS)) {
+    return queryCache.weeklyLogs.data;
+  }
   try {
     const ref = await getDatasetReferenceDate(houseId);
     const last7 = new Set(getWeeklyDateStrings(ref.referenceDate));
@@ -207,9 +226,11 @@ export async function fetchWeeklyLogs(houseId) {
       limit(5000)
     );
     const snap = await getDocs(q);
-    return snap.docs
+    const data = snap.docs
       .map((d) => ({ id: d.id, ...d.data() }))
       .filter((log) => log.house_id === houseId && last7.has(log.date));
+    queryCache.weeklyLogs = { data, timestamp: now };
+    return data;
   } catch (err) {
     console.warn("fetchWeeklyLogs error:", err.message);
     return [];
@@ -221,6 +242,10 @@ export async function fetchWeeklyLogs(houseId) {
  */
 export async function fetchMonthlyLogs(houseId) {
   if (!isFirebaseConfigured || !db || !houseId) return [];
+  const now = Date.now();
+  if (queryCache.monthlyLogs.data && (now - queryCache.monthlyLogs.timestamp < CACHE_DURATION_MS)) {
+    return queryCache.monthlyLogs.data;
+  }
   try {
     const ref = await getDatasetReferenceDate(houseId);
     const q = query(
@@ -229,7 +254,7 @@ export async function fetchMonthlyLogs(houseId) {
       limit(8000)
     );
     const snap = await getDocs(q);
-    return snap.docs
+    const data = snap.docs
       .map((d) => ({ id: d.id, ...d.data() }))
       .filter(
         (log) =>
@@ -237,6 +262,8 @@ export async function fetchMonthlyLogs(houseId) {
           typeof log.date === "string" &&
           log.date.startsWith(ref.monthPrefix)
       );
+    queryCache.monthlyLogs = { data, timestamp: now };
+    return data;
   } catch (err) {
     console.warn("fetchMonthlyLogs error:", err.message);
     return [];
@@ -248,6 +275,10 @@ export async function fetchMonthlyLogs(houseId) {
  */
 export async function fetchLatestDeviceStates(houseId) {
   if (!isFirebaseConfigured || !db || !houseId) return [];
+  const now = Date.now();
+  if (queryCache.latestDeviceStates.data && (now - queryCache.latestDeviceStates.timestamp < CACHE_DURATION_MS)) {
+    return queryCache.latestDeviceStates.data;
+  }
   try {
     const q = query(
       collection(db, ENERGY_LOGS),
@@ -267,6 +298,7 @@ export async function fetchLatestDeviceStates(houseId) {
         latest.push(log);
       }
     }
+    queryCache.latestDeviceStates = { data: latest, timestamp: now };
     return latest;
   } catch (err) {
     console.warn("fetchLatestDeviceStates error:", err.message);

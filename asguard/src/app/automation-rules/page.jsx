@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../../context/AuthContext'
+import { useSimulation } from '../../context/SimulationContext'
+import { deriveSimulationLogs } from '../../services/simulationMetrics'
 import {
   fetchUserProfile,
   fetchWeeklyLogs,
@@ -154,6 +156,7 @@ function AutomationRuleCard({ rule }) {
 export default function AutomationRules() {
   const router = useRouter()
   const { currentUser, loading: authLoading } = useAuth()
+  const sim = useSimulation()
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -166,60 +169,40 @@ export default function AutomationRules() {
   })
 
   useEffect(() => {
-    let isMounted = true
+    if (!sim || sim.isLoading || authLoading) return;
+    setLoading(false);
 
-    async function fetchRulesData() {
-      if (!currentUser?.uid) {
-        if (isMounted) setLoading(false)
-        return
-      }
-      setLoading(true)
-      setError(null)
+    if (sim.currentLogs.length === 0) return;
 
-      try {
-        const userProfile = await fetchUserProfile(currentUser.uid)
-        const houseId = userProfile?.house_id || userProfile?.houseId || 'HOUSE001'
+    try {
+      const { weeklyLogs } = deriveSimulationLogs(sim.currentLogs, sim.virtualTime);
+      const generatedRules = generateAutomationRules(weeklyLogs);
+      const uniqueDevices = getUniqueDevices(weeklyLogs);
 
-        const weeklyLogs = await fetchWeeklyLogs(houseId)
-        const generatedRules = generateAutomationRules(weeklyLogs)
-        const uniqueDevices = getUniqueDevices(weeklyLogs)
+      const totalSavingRupees = generatedRules.reduce((sum, r) => {
+        const match = r.saving.match(/\d+/);
+        return sum + (match ? parseInt(match[0]) : 0);
+      }, 0);
 
-        // Compute summary
-        const totalSavingRupees = generatedRules.reduce((sum, r) => {
-          const match = r.saving.match(/\d+/)
-          return sum + (match ? parseInt(match[0]) : 0)
-        }, 0)
+      const anomalousCost = weeklyLogs
+        .filter(l => l.ai_flag !== 'Normal' || l.threshold_exceeded)
+        .reduce((s, l) => s + (Number(l.electricity_cost) || 0), 0);
+      const monthlySaving = Math.round(anomalousCost * 4.3);
 
-        // Compute projected monthly saving
-        const anomalousCost = weeklyLogs
-          .filter(l => l.ai_flag !== 'Normal' || l.threshold_exceeded)
-          .reduce((s, l) => s + (Number(l.electricity_cost) || 0), 0)
-        const monthlySaving = Math.round(anomalousCost * 4.3)
+      const hasAnomalies = weeklyLogs.some(l => l.ai_flag !== 'Normal' || l.threshold_exceeded);
 
-        const hasAnomalies = weeklyLogs.some(l => l.ai_flag !== 'Normal' || l.threshold_exceeded)
-
-        if (isMounted) {
-          setRules(generatedRules)
-          setSummaryStats({
-            activeRules: generatedRules.length,
-            estimatedSaving: `₹${monthlySaving || totalSavingRupees}`,
-            automatedDevices: uniqueDevices.length,
-            status: hasAnomalies ? 'Needs Attention' : 'Optimal',
-          })
-          setLoading(false)
-        }
-      } catch (err) {
-        console.error('Automation rules fetch error:', err)
-        if (isMounted) {
-          setError(`Failed to load automation rules: ${err.message}`)
-          setLoading(false)
-        }
-      }
+      setRules(generatedRules);
+      setSummaryStats({
+        activeRules: generatedRules.length,
+        estimatedSaving: `₹${monthlySaving || totalSavingRupees}`,
+        automatedDevices: uniqueDevices.length,
+        status: hasAnomalies ? 'Needs Attention' : 'Optimal',
+      });
+    } catch (err) {
+      console.error(err);
+      setError(err.message);
     }
-
-    fetchRulesData()
-    return () => { isMounted = false }
-  }, [currentUser?.uid])
+  }, [sim?.virtualTime, sim?.currentLogs, sim?.isLoading, authLoading]);
 
   const ruleBadge = (
     <div className="bg-purple-100 text-purple-600 p-1.5 rounded-lg shadow-sm">
