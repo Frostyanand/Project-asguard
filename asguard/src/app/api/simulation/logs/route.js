@@ -26,7 +26,12 @@ export async function GET(request) {
       // Next.js response will gzip it automatically.
     });
 
-    return NextResponse.json({ logs });
+    return NextResponse.json({ logs }, {
+      headers: {
+        // Cache in browser and CDN for 1 hour, stale-while-revalidate for 1 day
+        'Cache-Control': 'public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400',
+      },
+    });
   } catch (error) {
     console.error('Error fetching simulation logs:', error);
     return NextResponse.json(

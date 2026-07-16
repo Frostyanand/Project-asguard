@@ -1,107 +1,255 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { useAuth } from '../../context/AuthContext'
+import { useSimulation } from '../../context/SimulationContext'
+import { generateRecommendations } from '../../firebase/firestoreService'
 import {
-  fetchUserProfile,
-  fetchWeeklyLogs,
-  generateRecommendations,
-} from '../../firebase/firestoreService'
-import {
-  Sparkles,
-  MessageSquare,
-  Thermometer,
-  Power,
-  Lightbulb,
-  AlertTriangle,
-  Send,
-  TrendingDown,
-  CheckCircle2,
-  SlidersHorizontal,
-  RefreshCw,
-  FlaskConical,
-  BarChart3,
-  Bot,
-  Loader2,
+  Sparkles, MessageSquare, Thermometer, Power, Lightbulb,
+  AlertTriangle, Send, TrendingDown, CheckCircle2, SlidersHorizontal,
+  RefreshCw, FlaskConical, BarChart3, Bot, Loader2,
 } from 'lucide-react'
 import Header from '../../components/Header'
 import AppLayout from '../../components/AppLayout'
 
-// ── Page-local Sub-components ─────────────────────────────────────────────────
+// ── Rule-based query engine ────────────────────────────────────────────────────
+// Completely deterministic — no LLM/AI involved.
+// Takes the current simulation logs + pre-computed recommendations and returns
+// a structured answer based on keyword matching in the user's query.
 
-function SuggestedQuestion({ text }) {
-  return (
-    <button className="w-full bg-white rounded-[16px] p-4 premium-shadow ring-1 ring-gray-100/60 hover:ring-[#2189FF]/30 hover:shadow-md transition-all duration-300 text-left group flex items-start gap-3 active:scale-[0.98] h-full">
-      <MessageSquare size={16} className="text-[#2189FF] shrink-0 mt-0.5 opacity-70 group-hover:opacity-100 transition-opacity" strokeWidth={2.5} />
-      <span className="text-[13px] font-bold text-gray-700 group-hover:text-gray-900 leading-snug pr-1">{text}</span>
-    </button>
-  )
+function answerQuery(query, sim, rec) {
+  const q = query.toLowerCase()
+  const logs  = sim?.currentLogs ?? []
+  const hasData = logs.length > 1
+
+  if (!hasData) {
+    return {
+      text: 'No simulation data is loaded yet. Please navigate to the **Simulation Engine** and press Play to start streaming energy data. Once data is available, I can answer questions about your usage, costs, and appliances.',
+      metrics: null,
+    }
+  }
+
+  // ── Active devices ─────────────────────────────────────────────────────────
+  if (q.includes('active') || q.includes('online') || q.includes('on') || q.includes('running')) {
+    const latestByDevice = {}
+    for (const l of logs) {
+      if (!latestByDevice[l.applianceId] || l.timestamp > latestByDevice[l.applianceId].timestamp) {
+        latestByDevice[l.applianceId] = l
+      }
+    }
+    const active = Object.values(latestByDevice).filter(l => l.status === 'ON')
+    return {
+      text: `As of the current simulation time, **${active.length} device${active.length !== 1 ? 's' : ''}** are active:\n${active.map(l => `• **${l.appliance?.name || l.applianceId}** (${l.roomName || l.roomId})`).join('\n')}`,
+      metrics: { label: 'Active Devices', value: active.length.toString() },
+    }
+  }
+
+  // ── Highest consuming appliance ───────────────────────────────────────────
+  if (q.includes('highest') || q.includes('most') || q.includes('top') || q.includes('biggest') || q.includes('largest') || q.includes('consumes')) {
+    const deviceMap = {}
+    for (const l of logs) {
+      const id = l.applianceId; const kwh = Number(l.energyKwh) || 0
+      if (!deviceMap[id]) deviceMap[id] = { name: l.appliance?.name || id, kwh: 0 }
+      deviceMap[id].kwh += kwh
+    }
+    const top3 = Object.values(deviceMap).sort((a, b) => b.kwh - a.kwh).slice(0, 3)
+    const totalKwh = Object.values(deviceMap).reduce((s, d) => s + d.kwh, 0)
+    const top = top3[0]
+    const pct = totalKwh > 0 ? ((top.kwh / totalKwh) * 100).toFixed(1) : 0
+    return {
+      text: `Your highest-consuming appliance so far is **${top.name}** with **${top.kwh.toFixed(2)} kWh** consumed (${pct}% of total).\n\nTop 3:\n${top3.map((d, i) => `${i + 1}. **${d.name}** — ${d.kwh.toFixed(2)} kWh`).join('\n')}`,
+      metrics: { label: 'Top Appliance', value: top.name, sub: `${top.kwh.toFixed(2)} kWh` },
+    }
+  }
+
+  // ── Cost / bill ────────────────────────────────────────────────────────────
+  if (q.includes('cost') || q.includes('bill') || q.includes('money') || q.includes('spend') || q.includes('rupee') || q.includes('₹') || q.includes('saving')) {
+    const totalCost = logs.reduce((s, l) => s + (Number(l.electricityCost) || 0), 0)
+    const vDate = new Date(sim.virtualTime)
+    const startOfMonth = new Date(Date.UTC(vDate.getUTCFullYear(), vDate.getUTCMonth(), 1)).getTime()
+    const daysElapsed = Math.max(1/24, (sim.virtualTime - startOfMonth) / 86400000)
+    const projected = (totalCost / daysElapsed) * 30
+    const saving = rec?.estimatedMonthlySaving ?? 0
+    return {
+      text: `**Cost incurred so far:** ₹${totalCost.toFixed(0)}\n**Projected monthly bill:** ₹${projected.toFixed(0)}\n**Potential monthly saving:** ₹${saving}\n\nThe largest contributor to your bill is your AC units. Running the ACs 1 hour less per night can save approximately ₹${(saving * 0.4).toFixed(0)}/month.`,
+      metrics: { label: 'Projected Monthly', value: `₹${projected.toFixed(0)}`, sub: `₹${saving} savable` },
+    }
+  }
+
+  // ── Carbon / environment ───────────────────────────────────────────────────
+  if (q.includes('carbon') || q.includes('emission') || q.includes('environment') || q.includes('green') || q.includes('eco')) {
+    const totalKwh = logs.reduce((s, l) => s + (Number(l.energyKwh) || 0), 0)
+    const carbon = totalKwh * 0.82
+    return {
+      text: `Your home has emitted **${carbon.toFixed(1)} kg of CO₂** so far in this simulation period.\n\nIndia's grid emission factor is **0.82 kg CO₂ per kWh** (CEA 2024). Your current consumption rate of **${totalKwh.toFixed(1)} kWh** translates to this footprint.\n\nSwitching your ACs to Eco Mode (target temp 26°C) can reduce carbon output by ~20-30%.`,
+      metrics: { label: 'CO₂ Emitted', value: `${carbon.toFixed(1)} kg` },
+    }
+  }
+
+  // ── Reduce bill / savings ──────────────────────────────────────────────────
+  if (q.includes('reduce') || q.includes('save') || q.includes('improve') || q.includes('efficient') || q.includes('optimis') || q.includes('less')) {
+    const saving = rec?.estimatedMonthlySaving ?? 0
+    const mainRec = rec?.mainRecommendation
+    return {
+      text: `Here are the top recommendations to reduce your energy costs:\n\n1. **${mainRec?.applianceName || 'Air Conditioner'}** — ${mainRec?.actionText || 'Set to 26°C and use a timer to auto-off after midnight.'}\n2. **Schedule high-wattage appliances** — Use the Automation Rules page to shift induction cooktop and water heater to off-peak hours (10 PM–6 AM).\n3. **Enable Eco Mode** — In Agentic Policies, switch to Eco Mode to automatically cap AC runtime.\n\nEstimated potential saving: **₹${saving}/month**.`,
+      metrics: { label: 'Potential Saving', value: `₹${saving}/month` },
+    }
+  }
+
+  // ── Anomalies / alerts ────────────────────────────────────────────────────
+  if (q.includes('anomal') || q.includes('alert') || q.includes('warning') || q.includes('unusual') || q.includes('spike')) {
+    const anomalies = logs.filter(l => l.aiFlag && l.aiFlag !== 'Normal')
+    const byDevice = {}
+    for (const a of anomalies) {
+      const id = a.applianceId
+      if (!byDevice[id]) byDevice[id] = { name: a.appliance?.name || id, count: 0 }
+      byDevice[id].count++
+    }
+    const topAnomaly = Object.values(byDevice).sort((a, b) => b.count - a.count)[0]
+    return {
+      text: `**${anomalies.length} anomaly events** detected so far in this simulation period.\n\n${topAnomaly ? `The most frequent anomalies are from **${topAnomaly.name}** (${topAnomaly.count} events).\n\n` : ''}You can review and configure anomaly thresholds in the **Agentic Policies** page under the Alerts tab.`,
+      metrics: { label: 'Anomaly Events', value: anomalies.length.toString() },
+    }
+  }
+
+  // ── Room breakdown ─────────────────────────────────────────────────────────
+  if (q.includes('room') || q.includes('bedroom') || q.includes('kitchen') || q.includes('living') || q.includes('bathroom')) {
+    const roomMap = {}
+    for (const l of logs) {
+      const rn = l.roomName || l.roomId || 'Unknown'
+      if (!roomMap[rn]) roomMap[rn] = 0
+      roomMap[rn] += Number(l.energyKwh) || 0
+    }
+    const sorted = Object.entries(roomMap).sort(([, a], [, b]) => b - a)
+    return {
+      text: `**Energy consumption by room** (accumulated so far):\n\n${sorted.map(([room, kwh], i) => `${i + 1}. **${room}** — ${kwh.toFixed(2)} kWh`).join('\n')}`,
+      metrics: { label: 'Top Room', value: sorted[0]?.[0] || '—', sub: `${sorted[0]?.[1]?.toFixed(2)} kWh` },
+    }
+  }
+
+  // ── Default: show general summary ─────────────────────────────────────────
+  const totalKwh  = logs.reduce((s, l) => s + (Number(l.energyKwh) || 0), 0)
+  const totalCost = logs.reduce((s, l) => s + (Number(l.electricityCost) || 0), 0)
+  const anomCount = logs.filter(l => l.aiFlag && l.aiFlag !== 'Normal').length
+  return {
+    text: `Here's a summary of your current energy status:\n\n• **Energy consumed:** ${totalKwh.toFixed(2)} kWh\n• **Cost incurred:** ₹${totalCost.toFixed(0)}\n• **Anomaly events:** ${anomCount}\n• **Records analysed:** ${logs.length.toLocaleString()}\n\nYou can ask me about: highest-consuming appliances, room-wise breakdown, cost projections, carbon footprint, savings opportunities, or active devices.`,
+    metrics: null,
+  }
 }
 
-function InsightCard({ icon: Icon, title, value, type }) {
-  const isAlert = type === 'alert'
+// ── Sub-components ─────────────────────────────────────────────────────────────
+
+function UserBubble({ text }) {
   return (
-    <div className="bg-white rounded-[20px] p-4 lg:p-5 premium-shadow ring-1 ring-gray-100/60 flex items-center gap-4 group hover:ring-blue-100/80 transition-all duration-300 h-full">
-      <div className={`w-11 h-11 lg:w-12 lg:h-12 rounded-2xl flex items-center justify-center shrink-0 transition-colors
-        ${isAlert ? 'bg-red-50 text-red-500 group-hover:bg-red-100' : 'bg-[#F7F9FC] text-[#1428A0] group-hover:bg-[#2189FF]/10 group-hover:text-[#2189FF]'}`}>
-        <Icon size={20} strokeWidth={2} />
+    <div className="flex flex-col items-end gap-2">
+      <div className="flex items-center gap-2 pr-1">
+        <span className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">You</span>
       </div>
-      <div>
-        <h4 className="text-[13px] lg:text-[14px] font-bold text-gray-900 leading-tight mb-1.5">{title}</h4>
-        <div className="flex items-center gap-2">
-          {isAlert ? (
-            <span className="text-[11px] font-bold text-red-500 uppercase tracking-widest">{value}</span>
-          ) : (
-            <>
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Potential Saving</span>
-              <span className="text-[11px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-md ring-1 ring-green-100/50">{value}</span>
-            </>
-          )}
-        </div>
+      <div className="bg-[#F7F9FC] ring-1 ring-gray-200/80 text-gray-900 rounded-[24px] rounded-tr-[8px] px-6 py-4 max-w-[80%] shadow-sm">
+        <p className="text-[15px] font-semibold leading-relaxed">{text}</p>
       </div>
     </div>
   )
 }
 
-function QuickActionBtn({ icon: Icon, label, primary, onClick }) {
+function AIBubble({ text, metrics, loading }) {
+  // Convert **bold** markers to JSX
+  const renderText = (t) => t.split('\n').map((line, i) => {
+    const parts = line.split(/(\*\*[^*]+\*\*)/g)
+    return (
+      <p key={i} className="text-[15px] font-medium leading-relaxed text-gray-700 mb-1">
+        {parts.map((p, j) =>
+          p.startsWith('**') && p.endsWith('**')
+            ? <strong key={j} className="text-gray-900 font-bold">{p.slice(2, -2)}</strong>
+            : p
+        )}
+      </p>
+    )
+  })
+
   return (
-    <button
-      onClick={onClick}
-      className={`px-4 py-3 rounded-[14px] font-bold text-[13px] transition-all duration-300 flex items-center gap-2 active:scale-[0.98] hover:-translate-y-0.5
-        ${primary
-          ? 'bg-[#1428A0] text-white hover:bg-[#102080] shadow-[0_4px_14px_rgba(20,40,160,0.25)] hover:shadow-[0_6px_20px_rgba(20,40,160,0.35)]'
-          : 'bg-white border-2 border-gray-100 text-gray-700 hover:bg-gray-50 hover:border-gray-200 hover:text-gray-900 shadow-sm hover:shadow'
-        }`}
-    >
-      {Icon && <Icon size={16} strokeWidth={2.5} className={primary ? 'text-blue-200' : 'text-gray-400'} />}
-      {label}
-    </button>
+    <div className="flex flex-col items-start gap-3 w-full">
+      <div className="flex items-center gap-3 ml-1">
+        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#1428A0] to-[#2189FF] text-white flex items-center justify-center shadow-md">
+          <Bot size={16} strokeWidth={2.5} />
+        </div>
+        <span className="text-[13px] font-extrabold text-[#1428A0] tracking-wide">ASGUARD</span>
+      </div>
+      <div className="bg-white ring-1 ring-blue-100/50 text-gray-800 rounded-[32px] rounded-tl-[10px] p-7 w-full shadow-sm">
+        {loading ? (
+          <div className="flex items-center gap-3 text-gray-400">
+            <Loader2 size={18} className="animate-spin text-[#1428A0]" />
+            <span className="text-sm font-semibold">Analysing your energy data…</span>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div>{renderText(text)}</div>
+            {metrics && (
+              <div className="bg-gradient-to-r from-[#F4F7FB] to-white border border-gray-100/80 rounded-2xl p-5 flex flex-wrap items-center gap-6 mt-3">
+                <div>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">{metrics.label}</p>
+                  <p className="text-[28px] font-extrabold text-[#1428A0] tracking-tight leading-none">{metrics.value}</p>
+                  {metrics.sub && <p className="text-xs text-gray-500 font-semibold mt-1">{metrics.sub}</p>}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
 
-// Icon map for insights
-const INSIGHT_ICON_MAP = { Thermometer, Power, Lightbulb, AlertTriangle }
-function resolveInsightIcon(iconType) {
-  return INSIGHT_ICON_MAP[iconType] || Lightbulb
-}
+// ── Main Page ──────────────────────────────────────────────────────────────────
 
-// ── AIAssistant Page ──────────────────────────────────────────────────────────
+const SUGGESTED_QUESTIONS = [
+  'How can I reduce my electricity bill?',
+  'Which appliance consumes the most energy?',
+  'Which room uses the most electricity?',
+  'How many devices are currently active?',
+  'What are my anomaly alerts?',
+  'What is my carbon footprint?',
+  'What are my projected monthly costs?',
+]
+
 export default function AIAssistant() {
   const router = useRouter()
-  const { currentUser, loading: authLoading } = useAuth()
+  const sim = useSimulation()
 
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [rec, setRec] = useState(null) // generateRecommendations result
+  const [messages, setMessages] = useState([])  // { role: 'user'|'assistant', text, metrics }
+  const [input,    setInput]    = useState('')
+  const [thinking, setThinking] = useState(false)
+  const bottomRef = useRef(null)
 
-  const suggestedQuestions = [
-    'How can I reduce my electricity bill?',
-    'Which appliance consumes the most energy?',
-    "Why was today's usage higher?",
-    'Show my highest energy-consuming room.',
-    'Recommend the best automation.',
-  ]
+  // Pre-compute recommendations once (updated when logs change)
+  const rec = useMemo(
+    () => generateRecommendations(sim?.currentLogs ?? []),
+    [sim?.currentLogs?.length]
+  )
+
+  // Auto-scroll to bottom on new message
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, thinking])
+
+  const sendMessage = useCallback((text) => {
+    if (!text.trim()) return
+    const userText = text.trim()
+    setMessages(prev => [...prev, { role: 'user', text: userText }])
+    setInput('')
+    setThinking(true)
+
+    // Simulate a brief thinking delay (rule engine is instant, but UX feels more natural)
+    setTimeout(() => {
+      const answer = answerQuery(userText, sim, rec)
+      setMessages(prev => [...prev, { role: 'assistant', text: answer.text, metrics: answer.metrics }])
+      setThinking(false)
+    }, 600)
+  }, [sim, rec])
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input) }
+  }
 
   const sparklesBadge = (
     <div className="bg-gradient-to-r from-[#1428A0] to-[#2189FF] text-white p-1.5 rounded-lg shadow-sm">
@@ -109,156 +257,63 @@ export default function AIAssistant() {
     </div>
   )
 
-  useEffect(() => {
-    let isMounted = true
-
-    async function fetchAIData() {
-      if (!currentUser?.uid) {
-        if (isMounted) setLoading(false)
-        return
-      }
-      setLoading(true)
-      setError(null)
-
-      try {
-        const userProfile = await fetchUserProfile(currentUser.uid)
-        const houseId = userProfile?.house_id || userProfile?.houseId || 'HOUSE001'
-
-        const weeklyLogs = await fetchWeeklyLogs(houseId)
-        const generated = generateRecommendations(weeklyLogs)
-
-        if (isMounted) {
-          setRec(generated)
-          setLoading(false)
-        }
-      } catch (err) {
-        console.error('AI Assistant fetch error:', err)
-        if (isMounted) {
-          setError(`Failed to load AI insights: ${err.message}`)
-          setLoading(false)
-        }
-      }
-    }
-
-    fetchAIData()
-    return () => { isMounted = false }
-  }, [currentUser?.uid])
-
-  const mainRec = rec?.mainRecommendation
-  const saving = rec?.estimatedMonthlySaving ?? 0
-  const confidence = rec?.confidence ?? 'Low'
-  const insights = rec?.insights ?? []
+  const hasData = (sim?.currentLogs?.length ?? 0) > 1
 
   return (
     <AppLayout>
       <Header
-        title="AI Energy Assistant"
+        title="Energy Assistant"
         titleExtra={sparklesBadge}
-        subtitle="Ask ASGUARD anything about your home's energy usage."
+        subtitle="Ask questions about your home's energy — answers are rule-based, derived from your simulation data."
       />
 
-      <div className="flex-1 flex gap-6 lg:gap-8 px-10 pb-10 overflow-hidden">
+      <div className="flex-1 flex gap-6 lg:gap-8 px-10 pb-10 overflow-hidden min-h-0">
 
         {/* LEFT: Suggested Questions */}
         <div className="w-[220px] lg:w-[240px] flex flex-col shrink-0 h-full z-20">
           <h3 className="text-[12px] font-bold tracking-widest uppercase text-gray-400 mb-5 ml-1">Suggested Questions</h3>
           <div className="flex flex-col gap-3 overflow-y-auto pb-4 pr-2 scroll-smooth">
-            {suggestedQuestions.map((q, idx) => <SuggestedQuestion key={idx} text={q} />)}
+            {SUGGESTED_QUESTIONS.map((q, idx) => (
+              <button
+                key={idx}
+                onClick={() => sendMessage(q)}
+                className="w-full bg-white rounded-[16px] p-4 premium-shadow ring-1 ring-gray-100/60 hover:ring-[#2189FF]/30 hover:shadow-md transition-all duration-300 text-left group flex items-start gap-3 active:scale-[0.98]"
+              >
+                <MessageSquare size={16} className="text-[#2189FF] shrink-0 mt-0.5 opacity-70 group-hover:opacity-100 transition-opacity" strokeWidth={2.5} />
+                <span className="text-[13px] font-bold text-gray-700 group-hover:text-gray-900 leading-snug">{q}</span>
+              </button>
+            ))}
           </div>
         </div>
 
         {/* CENTER: Chat */}
-        <div className="flex-1 flex flex-col h-full min-w-0 z-10 relative">
-          <div className="flex-1 bg-white rounded-[32px] premium-shadow ring-1 ring-gray-100/60 overflow-hidden flex flex-col">
+        <div className="flex-1 flex flex-col h-full min-w-0 z-10">
+          <div className="flex-1 bg-white rounded-[32px] premium-shadow ring-1 ring-gray-100/60 overflow-hidden flex flex-col min-h-0">
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-8 lg:p-10 chat-scroll flex flex-col gap-10">
+            <div className="flex-1 overflow-y-auto p-8 lg:p-10 flex flex-col gap-8 scroll-smooth">
 
-              {/* User Message */}
-              <div className="flex flex-col items-end gap-2">
-                <div className="flex items-center gap-3 mb-1 pr-1">
-                  <span className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">You</span>
-                </div>
-                <div className="bg-[#F7F9FC] ring-1 ring-gray-200/80 text-gray-900 rounded-[24px] rounded-tr-[8px] px-6 py-4 max-w-[85%] md:max-w-[75%] shadow-sm">
-                  <p className="text-[15px] font-semibold leading-relaxed">How can I reduce my electricity bill?</p>
-                </div>
-              </div>
+              {/* Welcome message */}
+              {messages.length === 0 && (
+                <AIBubble
+                  text={hasData
+                    ? `Hello! I'm ASGUARD, your energy monitoring assistant. I can answer questions about your home's energy usage, costs, appliances, and carbon footprint — all derived from your live simulation data.\n\nTry asking: **"Which appliance uses the most energy?"** or **"How can I reduce my bill?"**`
+                    : `Hello! I'm ASGUARD, your energy monitoring assistant.\n\nNo simulation data is loaded yet. Please go to the **Simulation Engine** page and press **Play** to start streaming energy data. Once data is available, I can answer all your questions about usage, costs, and appliances.`
+                  }
+                  metrics={null}
+                  loading={false}
+                />
+              )}
 
-              {/* AI Response */}
-              <div className="flex flex-col items-start gap-3.5 w-full">
-                <div className="flex items-center gap-3 mb-1 ml-1.5">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#1428A0] to-[#2189FF] text-white flex items-center justify-center shadow-md ai-glow">
-                    <Bot size={16} strokeWidth={2.5} />
-                  </div>
-                  <span className="text-[13px] font-extrabold text-[#1428A0] tracking-wide">ASGUARD AI</span>
-                </div>
+              {messages.map((msg, idx) =>
+                msg.role === 'user'
+                  ? <UserBubble key={idx} text={msg.text} />
+                  : <AIBubble key={idx} text={msg.text} metrics={msg.metrics} loading={false} />
+              )}
 
-                <div className="bg-white ring-1 ring-blue-100/50 text-gray-800 rounded-[32px] rounded-tl-[10px] p-8 lg:p-10 w-full shadow-[0_12px_40px_rgba(20,40,160,0.06)]">
-                  {loading ? (
-                    <div className="flex items-center gap-3 text-gray-400">
-                      <Loader2 size={20} className="animate-spin text-[#1428A0]" />
-                      <span className="text-sm font-semibold">Analysing your energy telemetry...</span>
-                    </div>
-                  ) : error ? (
-                    <div className="flex items-center gap-3 text-amber-600">
-                      <AlertTriangle size={20} />
-                      <span className="text-sm font-semibold">{error}</span>
-                    </div>
-                  ) : (
-                    <div className="space-y-6">
-                      {mainRec ? (
-                        <>
-                          <p className="text-[15px] lg:text-[16px] font-medium leading-relaxed">
-                            Your{' '}
-                            <span className="font-bold text-gray-900">{mainRec.applianceName}</span>{' '}
-                            contributed{' '}
-                            <span className="font-bold text-orange-600 bg-orange-50 px-2.5 py-1 rounded-lg ring-1 ring-orange-100/50 mx-1">
-                              {mainRec.percent}%
-                            </span>{' '}
-                            of recent energy usage.
-                          </p>
-                          <p className="text-[15px] lg:text-[16px] font-medium leading-relaxed">
-                            {mainRec.actionText}
-                          </p>
-                        </>
-                      ) : (
-                        <p className="text-[15px] lg:text-[16px] font-medium leading-relaxed text-gray-500">
-                          No AI insights available. Start collecting energy data to receive recommendations.
-                        </p>
-                      )}
+              {thinking && <AIBubble text="" metrics={null} loading={true} />}
 
-                      <div className="bg-gradient-to-r from-[#F4F7FB] to-white border border-gray-100/80 rounded-[24px] p-6 lg:p-7 flex flex-wrap items-center gap-8 lg:gap-12 shadow-sm mt-4">
-                        <div>
-                          <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">
-                            <TrendingDown size={16} className="text-green-500" strokeWidth={2.5} />
-                            Estimated Monthly Saving
-                          </p>
-                          <p className="text-[32px] lg:text-[36px] font-extrabold text-[#1428A0] tracking-tighter leading-none mt-1">
-                            {saving > 0 ? `₹${saving}` : '₹0'}
-                          </p>
-                        </div>
-                        <div className="w-[1px] h-12 bg-gray-200/80 hidden sm:block" />
-                        <div>
-                          <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">
-                            <CheckCircle2 size={16} className="text-[#2189FF]" strokeWidth={2.5} />
-                            Confidence
-                          </p>
-                          <p className="text-[22px] lg:text-[24px] font-extrabold text-gray-900 tracking-tight leading-none mt-1">
-                            {confidence}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-4 ml-2 flex flex-wrap gap-3">
-                  <QuickActionBtn primary icon={SlidersHorizontal} label="Apply Recommendation" />
-                  <QuickActionBtn icon={RefreshCw} label="Create Automation Rule" onClick={() => router.push('/automation-rules')} />
-                  <QuickActionBtn icon={FlaskConical} label="Run Energy Simulation" onClick={() => router.push('/simulation')} />
-                  <QuickActionBtn icon={BarChart3} label="View Analytics" onClick={() => router.push('/analytics')} />
-                </div>
-              </div>
+              <div ref={bottomRef} />
             </div>
 
             {/* Input */}
@@ -269,52 +324,68 @@ export default function AIAssistant() {
                 </div>
                 <input
                   type="text"
-                  placeholder="Ask a follow-up question..."
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={hasData ? 'Ask about your energy usage…' : 'Load simulation data first…'}
                   className="flex-1 bg-transparent py-4 outline-none text-[15px] text-gray-900 font-semibold placeholder:text-gray-400 placeholder:font-medium"
                 />
                 <div className="pr-3.5 pl-3">
-                  <button className="w-12 h-12 rounded-[18px] bg-[#1428A0] text-white flex items-center justify-center hover:bg-[#102080] transition-colors shadow-md group-hover:shadow-lg hover:-translate-y-0.5 transform duration-300">
+                  <button
+                    onClick={() => sendMessage(input)}
+                    disabled={!input.trim() || thinking}
+                    className="w-12 h-12 rounded-[18px] bg-[#1428A0] text-white flex items-center justify-center hover:bg-[#102080] transition-colors shadow-md disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
                     <Send size={18} strokeWidth={2.5} className="mr-0.5 mt-0.5" />
                   </button>
                 </div>
               </div>
-              <p className="text-center text-[11px] font-bold text-gray-400 mt-5 tracking-wide">
-                ASGUARD AI can make mistakes. Consider verifying important automation changes.
+              <p className="text-center text-[11px] font-bold text-gray-400 mt-4 tracking-wide">
+                Answers are rule-based and derived from your energy simulation data — not AI-generated.
               </p>
             </div>
           </div>
         </div>
 
-        {/* RIGHT: AI Insights */}
-        <div className="w-[260px] lg:w-[280px] flex flex-col shrink-0 h-full z-20">
-          <div className="flex items-center justify-between mb-5 px-1.5">
-            <h3 className="text-[12px] font-bold tracking-widest uppercase text-gray-400">Today&apos;s AI Insights</h3>
-            <span className="text-[10px] font-bold text-[#1428A0] bg-blue-50 ring-1 ring-blue-100/50 px-2 py-0.5 rounded-md shadow-sm uppercase tracking-wider">Live</span>
+        {/* RIGHT: Quick Actions */}
+        <div className="w-[200px] lg:w-[220px] flex flex-col shrink-0 h-full z-20">
+          <h3 className="text-[12px] font-bold tracking-widest uppercase text-gray-400 mb-5 ml-1">Quick Actions</h3>
+          <div className="flex flex-col gap-3">
+            {[
+              { icon: SlidersHorizontal, label: 'Set Policies',      path: '/automation-rules', primary: true },
+              { icon: RefreshCw,         label: 'Configure Rules',   path: '/automation-rules' },
+              { icon: FlaskConical,      label: 'Run Simulation',    path: '/simulation' },
+              { icon: BarChart3,         label: 'View Analytics',    path: '/analytics' },
+            ].map(({ icon: Icon, label, path, primary }) => (
+              <button
+                key={path + label}
+                onClick={() => router.push(path)}
+                className={`w-full px-4 py-3.5 rounded-[14px] font-bold text-[13px] transition-all flex items-center gap-2 active:scale-[0.98] text-left ${
+                  primary
+                    ? 'bg-[#1428A0] text-white hover:bg-[#102080] shadow-[0_4px_14px_rgba(20,40,160,0.25)]'
+                    : 'bg-white border border-gray-100 text-gray-700 hover:bg-gray-50 shadow-sm'
+                }`}
+              >
+                <Icon size={16} strokeWidth={2.5} className={primary ? 'text-blue-200' : 'text-gray-400'} />
+                {label}
+              </button>
+            ))}
           </div>
-          <div className="flex flex-col gap-3.5 overflow-y-auto pb-4 pr-2 scroll-smooth">
-            {loading ? (
-              <div className="flex items-center justify-center py-6 gap-2 text-gray-400">
-                <Loader2 size={18} className="animate-spin text-[#1428A0]" />
-                <span className="text-xs font-semibold">Loading insights...</span>
+
+          {/* Live data status */}
+          {hasData && (
+            <div className="mt-auto pt-6">
+              <div className="bg-green-50 border border-green-100 rounded-2xl p-4 flex items-start gap-3">
+                <CheckCircle2 size={16} className="text-green-500 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-bold text-green-700">Data Active</p>
+                  <p className="text-[11px] text-green-600 font-semibold mt-0.5">{(sim?.currentLogs?.length ?? 0).toLocaleString()} records</p>
+                </div>
               </div>
-            ) : insights.length > 0 ? (
-              insights.map((insight, idx) => {
-                const Icon = resolveInsightIcon(insight.iconType)
-                return (
-                  <InsightCard
-                    key={idx}
-                    icon={Icon}
-                    title={insight.title}
-                    value={insight.value}
-                    type={insight.type}
-                  />
-                )
-              })
-            ) : (
-              <p className="text-xs font-semibold text-gray-400 px-1">No insights available.</p>
-            )}
-          </div>
+            </div>
+          )}
         </div>
+
       </div>
     </AppLayout>
   )

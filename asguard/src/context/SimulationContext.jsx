@@ -1,47 +1,64 @@
 'use client';
-import { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 import { fetchUserProfile } from '../firebase/firestoreService';
+import { evaluatePolicies, generateProjections, DEFAULT_POLICIES } from '../services/policyEngine';
+
+// How often (real ms) to run the expensive policy engine + slice the logs.
+// 150ms = ~6 UI updates/sec → metrics update smoothly but main thread is free 90% of the time.
+const POLICY_EVAL_INTERVAL_MS = 150;
 
 const SimulationContext = createContext(null);
 
 export function SimulationProvider({ children }) {
   const { currentUser } = useAuth();
-  
+
   const [allLogs, setAllLogs] = useState([]);
   const [currentLogs, setCurrentLogs] = useState([]);
-  
+
+  // Policy Engine State
+  const [policies, setPolicies] = useState(DEFAULT_POLICIES);
+  const [agentActions, setAgentActions] = useState([]);
+  const [policyEngineSummary, setPolicyEngineSummary] = useState(null);
+  const [projections, setProjections] = useState(null);
+
   const [virtualTime, setVirtualTime] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(3600); // Default: 1 hour per second
-  
+
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  
+
   const lastTickRef = useRef(null);
   const rafRef = useRef(null);
 
+  // ── Data Loading ─────────────────────────────────────────────────────────
   useEffect(() => {
     let isMounted = true;
     async function loadData() {
       if (!currentUser?.uid) return;
       setIsLoading(true);
       try {
-        const userProfile = await fetchUserProfile(currentUser.uid);
-        const houseId = userProfile?.house_id || userProfile?.houseId || 'HOUSE001';
-        
+        let houseId = 'HOUSE001';
+        try {
+          const userProfile = await fetchUserProfile(currentUser.uid);
+          houseId = userProfile?.house_id || userProfile?.houseId || 'HOUSE001';
+        } catch (fbErr) {
+          console.warn('[SimulationContext] Firebase profile fetch failed (non-fatal):', fbErr.message);
+        }
+
         const res = await fetch(`/api/simulation/logs?houseId=${houseId}`);
         const data = await res.json();
-        
+
         if (data.error) throw new Error(data.error);
-        
+
         if (isMounted) {
           const parsedLogs = data.logs.map(l => ({
             ...l,
             timestamp: new Date(l.timestamp).getTime()
           }));
           setAllLogs(parsedLogs);
-          
+
           if (parsedLogs.length > 0) {
             setVirtualTime(parsedLogs[0].timestamp);
             setCurrentLogs([parsedLogs[0]]);
@@ -50,6 +67,7 @@ export function SimulationProvider({ children }) {
         }
       } catch (err) {
         if (isMounted) {
+          console.error('[SimulationContext] Failed to load logs:', err.message);
           setError(err.message);
           setIsLoading(false);
         }
@@ -59,7 +77,14 @@ export function SimulationProvider({ children }) {
     return () => { isMounted = false; };
   }, [currentUser?.uid]);
 
-  // Simulation Engine Loop
+  // ── Decoupled Playback Loop ───────────────────────────────────────────────
+  const virtualTimeRef = useRef(virtualTime);
+
+  // Sync ref when user scrubs/pauses
+  useEffect(() => {
+    virtualTimeRef.current = virtualTime;
+  }, [virtualTime]);
+
   useEffect(() => {
     if (!isPlaying || !virtualTime || allLogs.length === 0) {
       if (rafRef.current) {
@@ -71,25 +96,20 @@ export function SimulationProvider({ children }) {
     }
 
     const tick = (timeNow) => {
-      if (!lastTickRef.current) {
-        lastTickRef.current = timeNow;
-        rafRef.current = requestAnimationFrame(tick);
-        return;
-      }
-
+      if (!lastTickRef.current) lastTickRef.current = timeNow;
       const deltaMs = timeNow - lastTickRef.current;
       lastTickRef.current = timeNow;
 
-      setVirtualTime(prev => {
-        const nextTime = prev + (deltaMs * playbackSpeed);
-        const maxTime = allLogs[allLogs.length - 1].timestamp;
-        
-        if (nextTime >= maxTime) {
-          setIsPlaying(false);
-          return maxTime;
-        }
-        return nextTime;
-      });
+      const nextTime = virtualTimeRef.current + (deltaMs * playbackSpeed);
+      const maxTime = allLogs[allLogs.length - 1].timestamp;
+
+      if (nextTime >= maxTime) {
+        setIsPlaying(false);
+        virtualTimeRef.current = maxTime;
+        setVirtualTime(maxTime); // Force final sync
+      } else {
+        virtualTimeRef.current = nextTime;
+      }
 
       rafRef.current = requestAnimationFrame(tick);
     };
@@ -104,28 +124,112 @@ export function SimulationProvider({ children }) {
     };
   }, [isPlaying, playbackSpeed, allLogs.length]);
 
-  // Throttled currentLogs updater
-  // Re-filtering 21k array every 16ms can cause stuttering. We'll track the index.
-  const lastIndexRef = useRef(0);
+  // ── Decoupled currentLogs + Policy Engine updater ───────────────────────
+  // KEY DESIGN: The RAF loop (above) advances virtualTimeRef internally at 60fps.
+  // THIS interval syncs state and does the expensive work (slice + policy eval) at 6-7fps 
+  // so the main thread is idle 90% of the time and can process sidebar clicks.
+  const lastIndexRef    = useRef(0);
+  const allLogsRef      = useRef(allLogs);
+  const policiesRef     = useRef(policies);
+
+  // Keep refs in sync with state (no re-render cost)
+  useEffect(() => { allLogsRef.current = allLogs; },        [allLogs]);
+  useEffect(() => { policiesRef.current = policies; },      [policies]);
 
   useEffect(() => {
-    if (!virtualTime || allLogs.length === 0) return;
+    const runEval = () => {
+      const vt   = virtualTimeRef.current;
+      const logs = allLogsRef.current;
+      const pol  = policiesRef.current;
+
+      if (!vt || logs.length === 0) return;
+
+      let idx = lastIndexRef.current;
+
+      // Reset if scrubbed backwards
+      if (idx > 0 && logs[idx - 1]?.timestamp > vt) idx = 0;
+
+      // Walk forward to current virtual time
+      while (idx < logs.length && logs[idx].timestamp <= vt) idx++;
+      lastIndexRef.current = idx;
+
+      const rawSlice = logs.slice(0, idx);
+
+      // Policy engine evaluation
+      try {
+        const { modifiedLogs, agentActions: newActions, summary } = evaluatePolicies(rawSlice, pol);
+        const newProjections = generateProjections(rawSlice, vt, pol);
+        
+        // Sync state to trigger UI re-renders at ~6-7 FPS (150ms interval)
+        setVirtualTime(vt);
+        setCurrentLogs(modifiedLogs);
+        setAgentActions(newActions.slice(0, 100));
+        setPolicyEngineSummary(summary);
+        setProjections(newProjections);
+      } catch (engineErr) {
+        console.warn('[PolicyEngine] Evaluation error (non-fatal):', engineErr.message);
+        setCurrentLogs(rawSlice);
+      }
+    };
+
+    // Run once immediately (handles scrub/pause state)
+    runEval();
+
+    // Then throttle to POLICY_EVAL_INTERVAL_MS during playback
+    const intervalId = setInterval(runEval, POLICY_EVAL_INTERVAL_MS);
+    return () => clearInterval(intervalId);
+  }, []);  // Empty deps — refs handle latest values without re-creating interval
+
+  // ── Policy updater (persists to Firebase on best-effort basis) ──────────
+  const saveTimeoutRef = useRef(null);
+
+  const updatePolicies = useCallback((newPolicies) => {
+    setPolicies(newPolicies);
     
-    // Instead of filtering the whole array, we advance our index.
-    let idx = lastIndexRef.current;
-    
-    // If virtualTime rewound (e.g. user scrubbed backwards), reset idx
-    if (idx > 0 && allLogs[idx].timestamp > virtualTime) {
-      idx = 0;
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
     }
 
-    while (idx < allLogs.length && allLogs[idx].timestamp <= virtualTime) {
-      idx++;
-    }
+    // Debounce Firebase write to avoid quota issues on rapid UI changes
+    saveTimeoutRef.current = setTimeout(async () => {
+      if (currentUser?.uid) {
+        try {
+          const { doc, setDoc, getFirestore } = await import('firebase/firestore');
+          const { app } = await import('../firebase/client');
+          if (app) {
+            const db = getFirestore(app);
+            await setDoc(
+              doc(db, 'user_policies', currentUser.uid),
+              { ...newPolicies, updatedAt: new Date().toISOString() },
+              { merge: true }
+            );
+          }
+        } catch (fbErr) {
+          console.warn('[PolicyEngine] Firebase policy sync failed (non-fatal):', fbErr.message);
+        }
+      }
+    }, 1000);
+  }, [currentUser?.uid]);
 
-    lastIndexRef.current = idx;
-    setCurrentLogs(allLogs.slice(0, idx));
-  }, [virtualTime, allLogs]);
+  // ── Load persisted policies from Firebase on login ───────────────────────
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    async function loadPolicies() {
+      try {
+        const { doc, getDoc, getFirestore } = await import('firebase/firestore');
+        const { app } = await import('../firebase/client');
+        if (!app) return;
+        const db = getFirestore(app);
+        const snap = await getDoc(doc(db, 'user_policies', currentUser.uid));
+        if (snap.exists()) {
+          setPolicies(prev => ({ ...DEFAULT_POLICIES, ...snap.data() }));
+        }
+      } catch (fbErr) {
+        console.warn('[PolicyEngine] Firebase policy load failed (non-fatal):', fbErr.message);
+      }
+    }
+    loadPolicies();
+  }, [currentUser?.uid]);
 
   return (
     <SimulationContext.Provider value={{
@@ -138,7 +242,13 @@ export function SimulationProvider({ children }) {
       playbackSpeed,
       setPlaybackSpeed,
       isLoading,
-      error
+      error,
+      // Policy Engine
+      policies,
+      updatePolicies,
+      agentActions,
+      policyEngineSummary,
+      projections,
     }}>
       {children}
     </SimulationContext.Provider>

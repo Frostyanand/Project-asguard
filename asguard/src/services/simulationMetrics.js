@@ -15,12 +15,17 @@ export function deriveSimulationLogs(currentLogs, virtualTime) {
   const vDay = parseInt(vDateStr.split('-')[2], 10);
   const vMonthPrefix = `${vYear}-${vMonth}`;
 
+  const startOfMonth = new Date(Date.UTC(vDate.getUTCFullYear(), vDate.getUTCMonth(), 1)).getTime();
+  // Ensure minimum 1 hour elapsed (1/24 of a day) so the first hour's logs don't extrapolate infinitely
+  const exactDaysElapsed = Math.max(1/24, (virtualTime - startOfMonth) / 86400000);
+
   const refDateInfo = {
     referenceDate: vDateStr,
     referenceMonth: vMonth,
     referenceYear: vYear,
     monthPrefix: vMonthPrefix,
     dayOfReferenceDate: vDay || 30,
+    exactDaysElapsed,
   };
 
   // Helper to get last N days strings

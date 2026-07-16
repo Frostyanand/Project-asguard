@@ -549,7 +549,8 @@ export function getAnalyticsMetrics(weeklyLogs, monthlyLogs, refDateInfo) {
 export function getSimulationMetrics(monthlyLogs, refDateInfo) {
   const totalKwh = sumKwh(monthlyLogs);
   const totalCost = sumCost(monthlyLogs);
-  const daysElapsed = refDateInfo.dayOfReferenceDate || 30;
+  // Use exact fractional days if available (from simulation playback), else fallback to integer day
+  const daysElapsed = refDateInfo.exactDaysElapsed || refDateInfo.dayOfReferenceDate || 30;
 
   const projectedMonthlyCost = Number(
     ((totalCost / daysElapsed) * 30).toFixed(0)

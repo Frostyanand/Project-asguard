@@ -296,7 +296,7 @@ export default function DigitalTwin() {
             <div className="flex items-center gap-4 pointer-events-auto">
               <div className="bg-black/40 backdrop-blur-md px-5 py-3 rounded-2xl border border-white/10 flex items-center gap-3">
                 <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                <span className="text-white/90 font-bold text-sm tracking-tight">AEGIS Digital Twin</span>
+                <span className="text-white/90 font-bold text-sm tracking-tight">ASGUARD Digital Twin</span>
                 <span className="text-white/40 text-xs">•</span>
                 <span className="text-white/50 text-xs font-medium">{roomNamesMap[activeRoom] || 'Entire Apartment'}</span>
               </div>

@@ -99,6 +99,68 @@ export default function Analytics() {
     setMetrics(computed);
   }, [sim?.virtualTime, sim?.currentLogs, sim?.isLoading, authLoading]);
 
+  // ── Export functions ─────────────────────────────────────────────────────────
+  const handleExportCSV = () => {
+    const logs = sim?.currentLogs ?? []
+    if (logs.length === 0) return
+    const header = 'timestamp,date,hour,roomId,roomName,applianceId,applianceName,status,energyKwh,electricityCost,aiFlag'
+    const rows = logs.map(l => [
+      l.timestamp ? new Date(l.timestamp).toISOString() : '',
+      l.date ?? '',
+      l.hour ?? '',
+      l.roomId ?? '',
+      l.roomName ?? '',
+      l.applianceId ?? '',
+      l.appliance?.name ?? '',
+      l.status ?? '',
+      l.energyKwh ?? 0,
+      l.electricityCost ?? 0,
+      l.aiFlag ?? 'Normal',
+    ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+    const csv = [header, ...rows].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `asguard_energy_export_${new Date().toISOString().slice(0,10)}.csv`
+    a.click(); URL.revokeObjectURL(url)
+  }
+
+  const handleDownloadReport = () => {
+    const m = metrics
+    if (!m) return
+    const vDate = sim?.virtualTime ? new Date(sim.virtualTime).toLocaleString('en-IN') : 'N/A'
+    const report = [
+      'ASGUARD ENERGY REPORT',
+      '======================',
+      `Generated: ${new Date().toLocaleString('en-IN')}`,
+      `Simulation Time: ${vDate}`,
+      `Records Analysed: ${(sim?.currentLogs?.length ?? 0).toLocaleString()}`,
+      '',
+      'KEY METRICS',
+      '-----------',
+      `Today's Usage:          ${m.todayUsageKwh} kWh`,
+      `Today's Cost:           ₹${m.todayCost}`,
+      `Estimated Monthly Cost: ₹${m.estimatedMonthlyCost}`,
+      `Efficiency Score:       ${m.efficiencyScore} / 100`,
+      `Potential Saving:       ₹${m.potentialMonthlySaving}/month`,
+      '',
+      'TOP INSIGHTS',
+      '------------',
+      `Highest Consumer: ${m.highestConsumer?.name ?? 'N/A'} (${m.highestConsumer?.percent ?? 0}%)`,
+      `Most Efficient Room: ${m.mostEfficientRoom ?? 'N/A'}`,
+      `Peak Usage Time: ${m.peakUsageTime ?? 'N/A'}`,
+      '',
+      'DEVICE BREAKDOWN',
+      '----------------',
+      ...(m.deviceBreakdown ?? []).map(d => `${d.name.padEnd(30)} Today: ${String(d.todayKwh).padStart(7)} kWh  Monthly: ${String(d.monthlyKwh).padStart(8)} kWh  Efficiency: ${d.efficiency}%`),
+    ].join('\n')
+    const blob = new Blob([report], { type: 'text/plain;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `asguard_report_${new Date().toISOString().slice(0,10)}.txt`
+    a.click(); URL.revokeObjectURL(url)
+  }
+
   const analyticsBadge = (
     <div className="bg-blue-100 text-[#2189FF] p-1.5 rounded-lg shadow-sm">
       <BarChart3 size={16} strokeWidth={2.5} />
@@ -423,10 +485,18 @@ export default function Analytics() {
 
           {/* Bottom Actions */}
           <div className="flex flex-col-reverse sm:flex-row justify-end gap-4 pt-4 pb-8">
-            <button className="px-7 py-3.5 rounded-[16px] border-2 border-gray-100 bg-white text-gray-700 font-bold text-[14px] hover:bg-gray-50 hover:border-gray-200 hover:text-gray-900 transition-all active:scale-[0.98] flex items-center justify-center gap-2.5 shadow-sm hover:shadow">
+            <button
+              onClick={handleExportCSV}
+              disabled={!metrics || (sim?.currentLogs?.length ?? 0) === 0}
+              className="px-7 py-3.5 rounded-[16px] border-2 border-gray-100 bg-white text-gray-700 font-bold text-[14px] hover:bg-gray-50 hover:border-gray-200 hover:text-gray-900 transition-all active:scale-[0.98] flex items-center justify-center gap-2.5 shadow-sm hover:shadow disabled:opacity-40 disabled:cursor-not-allowed"
+            >
               <FileText size={18} strokeWidth={2.5} className="text-gray-400" /> Export CSV
             </button>
-            <button className="px-7 py-3.5 rounded-[16px] bg-[#1428A0] text-white font-bold text-[14px] hover:bg-[#102080] transition-all shadow-[0_4px_14px_rgba(20,40,160,0.25)] hover:shadow-[0_6px_20px_rgba(20,40,160,0.35)] active:scale-[0.98] flex items-center justify-center gap-2.5">
+            <button
+              onClick={handleDownloadReport}
+              disabled={!metrics}
+              className="px-7 py-3.5 rounded-[16px] bg-[#1428A0] text-white font-bold text-[14px] hover:bg-[#102080] transition-all shadow-[0_4px_14px_rgba(20,40,160,0.25)] hover:shadow-[0_6px_20px_rgba(20,40,160,0.35)] active:scale-[0.98] flex items-center justify-center gap-2.5 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
               <Download size={18} strokeWidth={2.5} className="text-blue-200" /> Download Report
             </button>
           </div>

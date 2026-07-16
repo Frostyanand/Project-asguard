@@ -5,11 +5,11 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '../context/AuthContext'
 import { Loader2 } from 'lucide-react'
 import Sidebar from './Sidebar'
-import SimulationPlayer from './SimulationPlayer'
 
 /**
  * AppLayout wraps all authenticated pages with the shared Sidebar & Route Guard.
  * If the user is unauthenticated, it automatically redirects them to /login.
+ * Note: SimulationPlayer is rendered directly inside /simulation page, not globally.
  */
 export default function AppLayout({ children }) {
   const router = useRouter()
@@ -42,7 +42,6 @@ export default function AppLayout({ children }) {
       <Sidebar />
       <main className="flex-1 flex flex-col h-screen overflow-hidden relative z-10">
         {children}
-        <SimulationPlayer />
       </main>
     </div>
   )
