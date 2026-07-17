@@ -1,8 +1,7 @@
 import { auth, db, isFirebaseConfigured } from "./client";
 import {
   GoogleAuthProvider,
-  signInWithRedirect,
-  getRedirectResult,
+  signInWithPopup,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
