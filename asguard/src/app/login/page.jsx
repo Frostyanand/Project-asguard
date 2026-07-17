@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../../context/AuthContext'
 import { getFriendlyErrorMessage } from '../../firebase/authService'
@@ -98,7 +98,14 @@ export default function Login() {
   const [authError, setAuthError] = useState(null)
   
   const router = useRouter()
-  const { loginWithGoogle, loginWithEmailPassword } = useAuth()
+  const { loginWithGoogle, loginWithEmailPassword, currentUser, loading } = useAuth()
+
+  // Auto-redirect if already logged in (e.g., coming back from Google Redirect)
+  useEffect(() => {
+    if (!loading && currentUser) {
+      router.push('/dashboard')
+    }
+  }, [currentUser, loading, router])
 
   const handleLogin = async (e) => {
     e.preventDefault()

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAuth } from '../../context/AuthContext'
@@ -100,7 +100,14 @@ export default function CreateAccount() {
   const [isLoading, setIsLoading] = useState(false)
 
   const router = useRouter()
-  const { registerWithEmailPassword, loginWithGoogle } = useAuth()
+  const { registerWithEmailPassword, loginWithGoogle, currentUser, loading } = useAuth()
+
+  // Auto-redirect if already logged in (e.g., coming back from Google Redirect)
+  useEffect(() => {
+    if (!loading && currentUser) {
+      router.push('/dashboard')
+    }
+  }, [currentUser, loading, router])
 
   const handleCreateAccount = async (e) => {
     e.preventDefault()
