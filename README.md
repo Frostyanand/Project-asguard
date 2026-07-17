@@ -315,3 +315,17 @@ Generate detailed reports including:
 Our vision is to transform traditional households into intelligent, energy-efficient smart homes by leveraging Artificial Intelligence, Digital Twin technology, predictive analytics, and cloud computing.
 
 ASGUARD aims to empower users with actionable insights that reduce electricity costs, minimize energy wastage, and contribute toward a more sustainable future.
+
+
+### 👥 Team Dhurandhar
+
+| Name | Role |
+|------|------|
+| **Aditi Krishna** |
+| **Hardik Sahni** | 
+| **Prakarsh Awasthi** | 
+| **Anurag Anand** | 
+
+**Project Mentor:** Anil Kumar S  
+**Faculty Mentor:** Dr. Poornima  
+**Course Coordinator:** Dr. P. Saranya
