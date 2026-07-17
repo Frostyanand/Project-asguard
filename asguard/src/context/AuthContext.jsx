@@ -5,7 +5,6 @@ import { auth, isFirebaseConfigured } from "../firebase/client";
 import { onAuthStateChanged } from "firebase/auth";
 import {
   signInWithGoogle,
-  handleGoogleRedirectResult,
   signInWithEmail,
   signUpWithEmail,
   signOutUser,
@@ -24,7 +23,7 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     if (!isFirebaseConfigured || !auth) {
       setFirebaseError(
-        "Firebase credentials are not configured in NEXT_PUBLIC_FIREBASE_* variables."
+        "Firebase is not configured. Please check your .env.local file and ensure all NEXT_PUBLIC_FIREBASE variables are set."
       );
       setLoading(false);
       return;
@@ -41,11 +40,6 @@ export const AuthProvider = ({ children }) => {
       authResolved.current = true;
       clearTimeout(timeout);
       
-      // Catch any redirect errors
-      handleGoogleRedirectResult().catch(err => {
-         console.error("Redirect login error:", err);
-      });
-
       if (firebaseUser) {
         console.log("[Registration Audit Context] onAuthStateChanged active user detected UID:", firebaseUser.uid);
         const basicProfile = {
@@ -79,17 +73,27 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const loginWithGoogle = async () => {
-    setLoading(true);
     try {
       console.log("[Registration Audit Context] Initiating Google login...");
-      await signInWithGoogle();
-      // Code beyond here won't execute because the browser redirects to Google's sign-in page.
-      // The result is handled on redirect back via onAuthStateChanged and handleGoogleRedirectResult.
+      const user = await signInWithGoogle();
+      const basicProfile = {
+        uid: user.uid,
+        name: user.displayName || user.email?.split("@")[0] || "SmartThings User",
+        email: user.email || "",
+        photoURL: user.photoURL || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200",
+      };
+      setCurrentUser(basicProfile);
+
+      try {
+        const profile = await createUserProfile(user);
+        if (profile) setCurrentUser(profile);
+        return profile || basicProfile;
+      } catch (err) {
+        return basicProfile;
+      }
     } catch (error) {
       console.error("[Registration Audit Context] Google Login Exception Code:", error.code, "Message:", error.message);
       throw error;
-    } finally {
-      setLoading(false);
     }
   };
 

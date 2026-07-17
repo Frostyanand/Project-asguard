@@ -50,7 +50,7 @@ export const getFriendlyErrorMessage = (error) => {
 };
 
 export const signInWithGoogle = async () => {
-  console.log("[Auth Audit] Calling signInWithRedirect for Google Auth...");
+  console.log("[Auth Audit] Calling signInWithPopup for Google Auth...");
   if (!isFirebaseConfigured || !auth) {
     const err = new Error("Firebase is not configured. Please check your .env.local file.");
     err.code = "auth/not-configured";
@@ -58,26 +58,11 @@ export const signInWithGoogle = async () => {
   }
 
   try {
-    await signInWithRedirect(auth, googleProvider);
-    // signInWithRedirect does not return a user immediately; it redirects the page.
-    // The result is handled by getRedirectResult in the AuthContext.
+    const result = await signInWithPopup(auth, googleProvider);
+    console.log("[Auth Audit] Firebase Response Received for Google Auth. User UID:", result.user.uid);
+    return result.user;
   } catch (error) {
-    console.error("[Auth Audit Failure] signInWithRedirect Exception - Code:", error?.code, "Message:", error?.message, "Stack:", error?.stack);
-    throw error;
-  }
-};
-
-export const handleGoogleRedirectResult = async () => {
-  if (!isFirebaseConfigured || !auth) return null;
-  try {
-    const result = await getRedirectResult(auth);
-    if (result) {
-       console.log("[Auth Audit] Firebase Redirect Response Received. User UID:", result.user.uid);
-       return result.user;
-    }
-    return null;
-  } catch (error) {
-    console.error("[Auth Audit Failure] getRedirectResult Exception - Code:", error?.code, "Message:", error?.message);
+    console.error("[Auth Audit Failure] signInWithPopup Exception - Code:", error?.code, "Message:", error?.message, "Stack:", error?.stack);
     throw error;
   }
 };

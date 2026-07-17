@@ -151,19 +151,14 @@ export default function CreateAccount() {
   }
 
   const handleGoogleSignIn = async () => {
-    setIsLoading(true)
-    setError('')
+    console.log("[Registration Audit UI] Google Sign In started...");
     try {
-      console.log("[Registration Audit UI] Google Sign In started...");
       await loginWithGoogle()
       console.log("[Registration Audit UI] Google Sign In complete. Redirecting to dashboard...");
       router.push('/dashboard')
     } catch (err) {
       console.error("[Registration Audit UI] Google Sign-In Exception Code:", err.code, "Message:", err.message);
       setError(err.message || 'Google Sign-In failed. Please try again.')
-    } finally {
-      console.log("[Registration Audit UI] Clearing form isLoading state.");
-      setIsLoading(false)
     }
   }
 

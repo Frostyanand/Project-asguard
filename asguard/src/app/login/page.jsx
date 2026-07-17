@@ -130,8 +130,6 @@ export default function Login() {
   }
 
   const handleGoogleLogin = async () => {
-    setIsSubmitting(true)
-    setAuthError(null)
     console.log("[Login Runtime Audit] Google Login Started...");
     try {
       await loginWithGoogle()
@@ -140,8 +138,6 @@ export default function Login() {
     } catch (err) {
       console.error("[Login Runtime Audit Failure] Exact Code:", err?.code, "Message:", err?.message, "Stack:", err?.stack);
       setAuthError(getFriendlyErrorMessage(err))
-    } finally {
-      setIsSubmitting(false)
     }
   }
 
