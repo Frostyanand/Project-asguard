@@ -10,12 +10,12 @@ const XAI_MODEL = 'grok-2'
 const GROQ_MODEL = 'llama-3.3-70b-versatile'
 
 export class GrokClient {
-  private xaiKey: string | undefined
-  private groqKey: string | undefined
+  private get xaiKey(): string | undefined {
+    return process.env.GROK_API_KEY
+  }
 
-  constructor() {
-    this.xaiKey = process.env.GROK_API_KEY
-    this.groqKey = process.env.GROQ_API_KEY
+  private get groqKey(): string | undefined {
+    return process.env.GROQ_API_KEY
   }
 
   public async generateCompletion(messages: Message[], options: { temperature?: number; language?: string } = {}): Promise<string> {
