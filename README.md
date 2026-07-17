@@ -319,12 +319,11 @@ ASGUARD aims to empower users with actionable insights that reduce electricity c
 
 ### 👥 Team Dhurandhar
 
-| Name | Role |
-|------|------|
-| **Aditi Krishna** |
-| **Hardik Sahni** | 
-| **Prakarsh Awasthi** | 
-| **Anurag Anand** | 
+# Name 
+**Aditi Krishna** 
+**Hardik Sahni**  
+**Prakarsh Awasthi**
+**Anurag Anand**
 
 **Project Mentor:** Anil Kumar S  
 **Faculty Mentor:** Dr. Poornima  
