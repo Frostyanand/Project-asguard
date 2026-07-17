@@ -166,16 +166,6 @@ export default function Login() {
           <DigitalTwinIllustration />
         </div>
 
-        <div className="flex gap-8 z-10 fade-in-up delay-200">
-          <div className="flex items-center gap-2.5">
-            <div className="w-2.5 h-2.5 rounded-full bg-[#2189FF] animate-glow" />
-            <span className="text-sm text-gray-600 font-medium">SmartThings Connected</span>
-          </div>
-          <div className="flex items-center gap-2.5">
-            <div className="w-2.5 h-2.5 rounded-full bg-green-500" />
-            <span className="text-sm text-gray-600 font-medium">AI Engine Online</span>
-          </div>
-        </div>
       </div>
 
       {/* RIGHT: Login Card */}
