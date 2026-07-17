@@ -1,6 +1,7 @@
 'use client'
 
 import { Bot, User, Loader2 } from 'lucide-react'
+import SQLPanel from './SQLPanel'
 
 export interface MessageType {
   id: string
@@ -143,6 +144,17 @@ export default function Message({ message, isGenerating }: MessageProps) {
             </div>
           )}
         </div>
+
+        {isAi && !isMsgGenerating && message.sql && (
+          <div className="mt-3.5 w-full">
+            <SQLPanel 
+              sql={message.sql}
+              executionTimeMs={message.executionTimeMs || 0}
+              data={message.data}
+              explanation={message.explanation}
+            />
+          </div>
+        )}
       </div>
     </div>
   )

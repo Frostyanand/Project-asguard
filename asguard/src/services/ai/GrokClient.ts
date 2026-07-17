@@ -1,4 +1,4 @@
-﻿import { Message } from '../../lib/grok'
+import { Message } from '../../lib/grok'
 
 // Supports: xAI Grok API (GROK_API_KEY) or Groq Cloud API (GROQ_API_KEY)
 // Groq is free at https://console.groq.com — use model: llama-3.3-70b-versatile
@@ -6,7 +6,7 @@
 const XAI_API_URL = 'https://api.x.ai/v1/chat/completions'
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions'
 
-const XAI_MODEL = 'grok-3-fast'
+const XAI_MODEL = 'grok-2'
 const GROQ_MODEL = 'llama-3.3-70b-versatile'
 
 export class GrokClient {
@@ -18,121 +18,186 @@ export class GrokClient {
     this.groqKey = process.env.GROQ_API_KEY
   }
 
-  private get activeKey(): string | undefined {
-    return this.groqKey || this.xaiKey
-  }
-
-  private get activeUrl(): string {
-    return this.groqKey ? GROQ_API_URL : XAI_API_URL
-  }
-
-  private get activeModel(): string {
-    return this.groqKey ? GROQ_MODEL : XAI_MODEL
-  }
-
   public async generateCompletion(messages: Message[], options: { temperature?: number; language?: string } = {}): Promise<string> {
     const lang = options.language || 'English'
 
-    if (!this.activeKey) {
-      console.warn('[GrokClient] No API key found. Using mock fallback.')
-      return this.getMockSQL(messages)
-    }
-
-    try {
-      const response = await fetch(this.activeUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.activeKey}`
-        },
-        body: JSON.stringify({
-          model: this.activeModel,
-          messages,
-          temperature: options.temperature ?? 0.0,
-          stream: false,
-          max_tokens: 512
+    // 1. Try Grok (xAI) first
+    if (this.xaiKey) {
+      try {
+        console.log('[GrokClient] Attempting completion via xAI Grok...')
+        const response = await fetch(XAI_API_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${this.xaiKey}`
+          },
+          body: JSON.stringify({
+            model: XAI_MODEL,
+            messages,
+            temperature: options.temperature ?? 0.0,
+            stream: false,
+            max_tokens: 512
+          })
         })
-      })
 
-      if (!response.ok) {
-        const errText = await response.text()
-        console.warn(`[GrokClient] API error ${response.status}: ${errText}`)
-        throw new Error(`API returned ${response.status}`)
+        if (response.ok) {
+          const data = await response.json()
+          const content = data?.choices?.[0]?.message?.content?.trim()
+          if (content) {
+            console.log('[GrokClient] Completion succeeded via xAI Grok.')
+            return content
+          }
+        } else {
+          const errText = await response.text()
+          console.warn(`[GrokClient] xAI API error ${response.status}: ${errText}`)
+        }
+      } catch (err: any) {
+        console.warn('[GrokClient] xAI completion failed:', err.message)
       }
-
-      const data = await response.json()
-      return data?.choices?.[0]?.message?.content?.trim() || ''
-    } catch (err: any) {
-      console.warn('[GrokClient] Completion failed, using mock:', err.message)
-      return this.getMockSQL(messages)
     }
+
+    // 2. Try Groq second
+    if (this.groqKey) {
+      try {
+        console.log('[GrokClient] Attempting completion via Groq...')
+        const response = await fetch(GROQ_API_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${this.groqKey}`
+          },
+          body: JSON.stringify({
+            model: GROQ_MODEL,
+            messages,
+            temperature: options.temperature ?? 0.0,
+            stream: false,
+            max_tokens: 512
+          })
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          const content = data?.choices?.[0]?.message?.content?.trim()
+          if (content) {
+            console.log('[GrokClient] Completion succeeded via Groq.')
+            return content
+          }
+        } else {
+          const errText = await response.text()
+          console.warn(`[GrokClient] Groq API error ${response.status}: ${errText}`)
+        }
+      } catch (err: any) {
+        console.warn('[GrokClient] Groq completion failed:', err.message)
+      }
+    }
+
+    // 3. Fallback to mock
+    console.warn('[GrokClient] Both APIs failed or keys missing. Using mock SQL fallback.')
+    return this.getMockSQL(messages)
   }
 
   public async generateStream(messages: Message[], options: { temperature?: number; language?: string } = {}): Promise<ReadableStream> {
     const lang = options.language || 'English'
 
-    if (!this.activeKey) {
-      console.warn('[GrokClient] No API key. Using mock stream.')
-      return this.createMockStream(this.getMockNL(messages, lang))
+    // 1. Try Grok (xAI) first
+    if (this.xaiKey) {
+      try {
+        console.log('[GrokClient] Attempting stream via xAI Grok...')
+        const response = await fetch(XAI_API_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${this.xaiKey}`
+          },
+          body: JSON.stringify({
+            model: XAI_MODEL,
+            messages,
+            temperature: options.temperature ?? 0.5,
+            stream: true,
+            max_tokens: 1024
+          })
+        })
+
+        if (response.ok) {
+          console.log('[GrokClient] Stream succeeded via xAI Grok.')
+          return this.handleStreamResponse(response)
+        } else {
+          const errText = await response.text()
+          console.warn(`[GrokClient] xAI Stream API error ${response.status}: ${errText}`)
+        }
+      } catch (err: any) {
+        console.warn('[GrokClient] xAI stream failed:', err.message)
+      }
     }
 
-    try {
-      const response = await fetch(this.activeUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.activeKey}`
-        },
-        body: JSON.stringify({
-          model: this.activeModel,
-          messages,
-          temperature: options.temperature ?? 0.5,
-          stream: true,
-          max_tokens: 1024
+    // 2. Try Groq second
+    if (this.groqKey) {
+      try {
+        console.log('[GrokClient] Attempting stream via Groq...')
+        const response = await fetch(GROQ_API_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${this.groqKey}`
+          },
+          body: JSON.stringify({
+            model: GROQ_MODEL,
+            messages,
+            temperature: options.temperature ?? 0.5,
+            stream: true,
+            max_tokens: 1024
+          })
         })
-      })
 
-      if (!response.ok) {
-        const errText = await response.text()
-        console.warn(`[GrokClient] Stream API error ${response.status}: ${errText}`)
-        throw new Error(`API returned ${response.status}`)
+        if (response.ok) {
+          console.log('[GrokClient] Stream succeeded via Groq.')
+          return this.handleStreamResponse(response)
+        } else {
+          const errText = await response.text()
+          console.warn(`[GrokClient] Groq Stream API error ${response.status}: ${errText}`)
+        }
+      } catch (err: any) {
+        console.warn('[GrokClient] Groq stream failed:', err.message)
       }
+    }
 
-      const reader = response.body?.getReader()
-      const decoder = new TextDecoder()
-      const encoder = new TextEncoder()
+    // 3. Fallback to mock stream
+    console.warn('[GrokClient] Both stream APIs failed or keys missing. Using mock stream fallback.')
+    return this.createMockStream(this.getMockNL(messages, lang))
+  }
 
-      return new ReadableStream({
-        async start(controller) {
-          if (!reader) { controller.close(); return }
-          let buffer = ''
-          try {
-            while (true) {
-              const { done, value } = await reader.read()
-              if (done) break
-              buffer += decoder.decode(value, { stream: true })
-              const lines = buffer.split('\n')
-              buffer = lines.pop() || ''
-              for (const line of lines) {
-                const cleaned = line.trim()
-                if (!cleaned || cleaned === 'data: [DONE]') continue
-                if (cleaned.startsWith('data: ')) {
-                  try {
-                    const parsed = JSON.parse(cleaned.substring(6))
-                    const content = parsed?.choices?.[0]?.delta?.content
-                    if (content) controller.enqueue(encoder.encode(content))
-                  } catch (_) {}
-                }
+  private handleStreamResponse(response: Response): ReadableStream {
+    const reader = response.body?.getReader()
+    const decoder = new TextDecoder()
+    const encoder = new TextEncoder()
+
+    return new ReadableStream({
+      async start(controller) {
+        if (!reader) { controller.close(); return }
+        let buffer = ''
+        try {
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split('\n')
+            buffer = lines.pop() || ''
+            for (const line of lines) {
+              const cleaned = line.trim()
+              if (!cleaned || cleaned === 'data: [DONE]') continue
+              if (cleaned.startsWith('data: ')) {
+                try {
+                  const parsed = JSON.parse(cleaned.substring(6))
+                  const content = parsed?.choices?.[0]?.delta?.content
+                  if (content) controller.enqueue(encoder.encode(content))
+                } catch (_) {}
               }
             }
-            controller.close()
-          } catch (streamErr) { controller.error(streamErr) }
-        }
-      })
-    } catch (err: any) {
-      console.warn('[GrokClient] Stream failed, using mock:', err.message)
-      return this.createMockStream(this.getMockNL(messages, lang))
-    }
+          }
+          controller.close()
+        } catch (streamErr) { controller.error(streamErr) }
+      }
+    })
   }
 
   private createMockStream(text: string): ReadableStream {
